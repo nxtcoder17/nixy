@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - master
+
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  github-release:
+    name: Create Github Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      is_nightly: ${{ steps.meta.outputs.is_nightly }}
+    steps:
+      - uses: nxtcoder17/actions/metadata@main
+        id: meta
+
+      - name: create github release
+        uses: nxtcoder17/actions/github-release-create@main
+        with:
+          name: ${{steps.meta.outputs.version}}
+          github_token: ${{ github.token }}
+
+  build-binaries:
+    runs-on: ubuntu-latest
+    name: Build Binaries
+    needs:
+      - github-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: nxtcoder17/actions/setup-docker@main
+        with:
+          docker_registry: "ghcr.io"
+          docker_username: ${{ github.actor }}
+          docker_password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build and copy binaries
+        env:
+          buildx_cache: "ghcr.io/${{ github.repository }}:buildx-cache-${{needs.github-release.outputs.version}}"
+        run: |+
+          docker buildx build -f ./Dockerfile.build \
+            --cache-to type=registry,ref="$buildx_cache",mode=max,compression=zstd,compression-level=13,force-compression=true \
+            --cache-from type=registry,ref="$buildx_cache" \
+            --output=type=local,dest=/tmp/binaries \
+            .
+
+      - name: upload to github_release
+        uses: nxtcoder17/actions/github-release-upload@main
+        with:
+          name: ${{steps.meta.outputs.version}}
+          github_token: ${{ github.token }}
+          files: |+
+            /tmp/binaries/*

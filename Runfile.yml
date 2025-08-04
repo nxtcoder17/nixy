@@ -1,0 +1,7 @@
+tasks:
+  build:
+    watch:
+      extensions:
+        - .go
+    cmd:
+      - go build -o ./bin/nixy ./cmd/main.go
