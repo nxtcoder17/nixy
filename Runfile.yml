@@ -1,7 +1,41 @@
 tasks:
-  build:
+  build:watch:
     watch:
       extensions:
         - .go
     cmd:
       - go build -o ./bin/nixy ./cmd/main.go
+
+  build:
+    env:
+      binpath:
+        default: 
+          sh: "./bin/nixy"
+      GOOS:
+        default:
+          sh: go env GOOS
+      GOARCH:
+        default:
+          sh: go env GOARCH
+    cmd:
+      - go build -v -o $binpath-$GOOS-$GOARCH -ldflags="-s -w" -tags urfave_cli_no_docs ./cmd/
+
+  build:all:
+    parallel: true
+    cmd:
+      - run: build
+        env:
+          GOOS: linux
+          GOARCH: amd64
+      - run: build
+        env:
+          GOOS: linux
+          GOARCH: arm64
+      - run: build
+        env:
+          GOOS: darwin
+          GOARCH: amd64
+      - run: build
+        env:
+          GOOS: darwin
+          GOARCH: arm64
