@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nxtcoder17/fastlog"
 	"github.com/nxtcoder17/nixy/pkg/nix"
 	"github.com/urfave/cli/v3"
 )
@@ -26,12 +29,36 @@ func main() {
 		Name:        "nixy",
 		Version:     Version,
 		Description: "An approachable nix based development workspace setup tool",
-		Flags:       []cli.Flag{},
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:     "debug",
+				Usage:    "--debug",
+				Required: false,
+				Value:    false,
+			},
+		},
 
 		// ShellCompletionCommandName: "completion:shell",
 		EnableShellCompletion: true,
 
 		Commands: []*cli.Command{
+			{
+				Name:    "init",
+				Suggest: true,
+				Action: func(ctx context.Context, c *cli.Command) error {
+					if _, err := os.Stat("nixy.yml"); err != nil {
+						if errors.Is(err, fs.ErrNotExist) {
+							if err := os.WriteFile("nixy.yml", []byte(`packages: []`), 0o644); err != nil {
+								return err
+							}
+							return nil
+						}
+						return err
+					}
+
+					return nil
+				},
+			},
 			{
 				Name:    "install",
 				Usage:   "<pkgname>",
@@ -85,6 +112,16 @@ func main() {
 }
 
 func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
+	logger := fastlog.New(fastlog.Options{
+		Writer:        os.Stderr,
+		Format:        fastlog.ConsoleFormat,
+		ShowDebugLogs: c.IsSet("debug"),
+		ShowCaller:    true,
+		EnableColors:  true,
+	})
+
+	slog.SetDefault(logger.Slog())
+
 	switch {
 	case c.IsSet("file"):
 		return nix.LoadFromFile(c.String("file"))

@@ -22,7 +22,7 @@ func (nix *Nix) PackagePaths(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	return strings.Split(b.String(), "\n"), nil
+	return strings.Split(strings.TrimSpace(b.String()), "\n"), nil
 }
 
 func (nix *Nix) BinPaths(ctx context.Context) ([]string, error) {

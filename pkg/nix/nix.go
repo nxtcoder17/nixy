@@ -1,6 +1,7 @@
 package nix
 
 import (
+	"log/slog"
 	"os"
 	"sync"
 
@@ -13,6 +14,8 @@ type Nix struct {
 	Packages []string `json:"packages"`
 
 	sync.Mutex
+
+	Logger *slog.Logger
 }
 
 func LoadFromFile(f string) (*Nix, error) {
