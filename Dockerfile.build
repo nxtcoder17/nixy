@@ -7,11 +7,11 @@ RUN --mount=type=bind,source=flake.nix,target=flake.nix \
 nix develop --verbose --command echo "nix setup complete"
 EOF
 
-ARG GOMODCACHE=/cache/gomodcache
-ARG GOCACHE=/cache/gocache
+ENV CACHE_DIR=/cache
 
-ENV GOMODCACHE=${GOMODCACHE}
-ENV GOCACHE=${GOCACHE}
+ENV GOMODCACHE=$CACHE_DIR/gomodcache
+ENV GOCACHE=$CACHE_DIR/gocache
+
 ENV CGO_ENABLED=0
 
 RUN --mount=type=bind,source=flake.nix,target=flake.nix \
@@ -34,4 +34,4 @@ nix develop --command run build:all binpath=/out/nixy
 EOF
 
 FROM scratch
-COPY --from=builder /out/ .
+COPY --from=builder /out/ ./

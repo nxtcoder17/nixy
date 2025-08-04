@@ -10,7 +10,7 @@ tasks:
     env:
       binpath:
         default: 
-          sh: "./bin/nixy"
+          sh: "echo ./bin/nixy"
       GOOS:
         default:
           sh: go env GOOS
@@ -22,6 +22,9 @@ tasks:
 
   build:all:
     parallel: true
+    # env:
+    #   GOMODCACHE: "/tmp/y/modcache"
+    #   GOCACHE: "/tmp/y/gocache"
     cmd:
       - run: build
         env:
