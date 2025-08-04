@@ -25,29 +25,12 @@ time nix develop --command go mod download -x -json
 echo "DOWNLOADED go modules"
 EOF
 
-RUN mkdir -p /out
 SHELL ["bash", "-c"]
-RUN mkdir -p /out
 RUN --mount=type=bind,source=.,target=/app \
   --mount=type=cache,target=$GOMODCACHE \
   --mount=type=cache,target=$GOCACHE \
   <<EOF
-arch_list=("amd64" "arm64")
-os_list=("linux" "darwin")
-
-for os in "${os_list[@]}"; do
-  for arch in "${arch_list[@]}"; do
-    echo "🚧 building binary for os=$os arch=$arch"
-    export GOARCH=$arch
-    export GOOS=$os
-
-    binary=/tmp/bin/nixy-$GOOS-$GOARCH
-    time nix develop --command go build -v -o $binary -ldflags="-s -w" -tags urfave_cli_no_docs ./cmd/
-    echo "BUILT binary [$GOOS/$GOARCH]"
-  done
-done
-
-mv /tmp/bin/* /out
+nix develop --command run build:all binpath=/out/nixy
 EOF
 
 FROM scratch

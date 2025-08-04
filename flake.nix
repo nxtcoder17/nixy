@@ -33,12 +33,12 @@
               name = "run";
               pname = "run";
               src = fetchurl {
-                url = "https://github.com/nxtcoder17/Runfile/releases/download/v1.5.3/run-${os}-${arch}";
+                url = "https://github.com/nxtcoder17/Runfile/releases/download/v1.5.4/run-${os}-${arch}";
                 sha256 = builtins.getAttr "${os}/${arch}" {
-                  "linux/amd64" = "BRTgIIg1D+Q4nYN4Z5LoHv+NKamT34qOZZDUxpZkBa0=";
-                  "linux/arm64" = "wz0ReA/yvZ1ktMGkLc/vMe/gTDpeI6clL+IBYCUo+Yo=";
-                  "darwin/amd64" = "it/EhW10tZlyEL5reH9FhSFfPSslQr0AgzDcgeqngcI=";
-                  "darwin/arm64" = "aS+b1GoivZmqINb/wBmjXMK4pUWLs17lc2z/FRw/Dx0=";
+                  "linux/amd64" = "j/0q+cNdt2ltFIpCgnenvZGX1GEJ5ZKBrRfskalhO5c=";
+                  "linux/arm64" = "BsI1cFNG/wEGa33HZiG+Mt/iSaA8kkPyrQX+lbGrMaM=";
+                  "darwin/amd64" = "VDroUq7dOvHa5rWK9N01Mv6aqUfXcVrk/NRXvGiYzAk=";
+                  "darwin/arm64" = "iltkmz3G2zeSs04La1xB1IcvfzG2g6ssisET5skhs2U=";
                 };
               };
               unpackPhase = ":";
