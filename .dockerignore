@@ -1,0 +1,7 @@
+**
+!Runfile.yml
+!cmd
+!pkg
+!go.mod
+!go.sum
+!flake.*
