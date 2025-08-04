@@ -62,7 +62,7 @@ jobs:
       - name: upload to github_release
         uses: nxtcoder17/actions/github-release-upload@main
         with:
-          name: ${{steps.meta.outputs.version}}
+          name: ${{needs.github-release.outputs.version}}
           github_token: ${{ github.token }}
           files: |+
             /tmp/binaries/*
