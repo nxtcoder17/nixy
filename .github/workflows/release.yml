@@ -21,6 +21,7 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       is_nightly: ${{ steps.meta.outputs.is_nightly }}
+      sanitized_ref: ${{ steps.meta.outputs.sanitized_ref }}
     steps:
       - uses: nxtcoder17/actions/metadata@main
         id: meta
@@ -51,11 +52,13 @@ jobs:
 
       - name: build and copy binaries
         env:
-          buildx_cache: "ghcr.io/${{ github.repository }}:buildx-cache-${{needs.github-release.outputs.version}}"
+          buildx_cache_master: "ghcr.io/${{ github.repository }}:buildx-cache-master"
+          buildx_cache: "ghcr.io/${{ github.repository }}:buildx-cache-${{needs.github-release.outputs.sanitized_ref}}"
         run: |+
           docker buildx build -f ./Dockerfile.build \
             --cache-to type=registry,ref="$buildx_cache",mode=max,compression=zstd,compression-level=13,force-compression=true \
             --cache-from type=registry,ref="$buildx_cache" \
+            --cache-from type=registry,ref="$buildx_cache_master" \
             --output=type=local,dest=/tmp/binaries \
             .
 
