@@ -1,0 +1,38 @@
+name: Run on PR Approval Only
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  test-binary-build:
+    if: github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show PR info
+        run: |
+          echo "This PR was approved!"
+          echo "Branch: ${{ github.head_ref }}"
+          echo "SHA: ${{ github.event.pull_request.head.sha }}"
+
+      - uses: nxtcoder17/actions/setup-docker@main
+        with:
+          docker_registry: "ghcr.io"
+          docker_username: ${{ github.actor }}
+          docker_password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build and copy binaries
+        env:
+          buildx_cache_master: "ghcr.io/${{ github.repository }}:buildx-cache-master"
+          buildx_cache: "ghcr.io/${{ github.repository }}:buildx-cache-${{needs.github-release.outputs.sanitized_ref}}"
+        run: |+
+          docker buildx build -f ./Dockerfile.build \
+            --cache-to type=registry,ref="$buildx_cache",mode=max,compression=zstd,compression-level=13,force-compression=true \
+            --cache-from type=registry,ref="$buildx_cache" \
+            --cache-from type=registry,ref="$buildx_cache_master" \
+            --output=type=local,dest=/tmp/binaries \
+            .
