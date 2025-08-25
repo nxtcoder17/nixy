@@ -2,12 +2,13 @@
 {{- $nightlyPkgs := .nightlyPkgs }}
 {{- $projectDir := .projectDir }}
 {{- $profileDir := .profileDir }}
+{{- $nixpkgsCommit := .nixpkgsCommit }}
 {
   description = "nixy project development workspace";
 
   inputs = {
-    flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsCommit}}";
+    flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
 
     profile-flake = {
       url = "path:{{$profileDir}}";

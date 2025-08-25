@@ -2,8 +2,10 @@ package nix
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"text/template"
 )
 
 // var (
@@ -115,11 +118,58 @@ var templateProfileFlake string
 //go:embed templates/project-flake.nix.tpl
 var templateProjectFlake string
 
+func fetchCurrentNixpkgsHash(ctx context.Context) (string, error) {
+	if !askUser("Fetching Current NixPkgs Version ?") {
+		return "", fmt.Errorf("User Aborted fetching current nixpkgs version")
+	}
+
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/nixos/nixpkgs/commits/nixos-unstable", nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		SHA string `json:"sha"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	resp.Body.Close()
+
+	return result.SHA, nil
+}
+
 func ProfileCreate(ctx context.Context, name string) error {
 	n := Nix{Executor: BubbleWrapExecutor, BubbleWrap: BubbleWrap{ProfileName: name}}
 	n.BubbleWrap.createFSDirs()
 
 	if err := downloadStaticNixBinary(ctx, filepath.Join(n.BubbleWrap.ProfileBinPath(), "nix")); err != nil {
+		return err
+	}
+
+	nixpkgsHash, err := fetchCurrentNixpkgsHash(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := n.writeProfileMetadata(ProfileMetadata{NixPkgsCommit: nixpkgsHash}); err != nil {
+		return err
+	}
+
+	t := template.New("profile-flake")
+	if _, err := t.Parse(templateProfileFlake); err != nil {
+		return err
+	}
+	b := new(bytes.Buffer)
+	if err := t.ExecuteTemplate(b, "profile-flake", map[string]any{
+		"nixpkgsCommit": nixpkgsHash,
+	}); err != nil {
 		return err
 	}
 
@@ -131,10 +181,9 @@ cat > flake.nix <<EOF
 %s
 EOF
 popd
-`, n.ProfileSetupDir(), templateProfileFlake),
+`, n.ProfileSetupDir(), b.String()),
 	}
 
-	// Downloading Static Nix Binary
 	cmd := exec.CommandContext(ctx, "bash", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

@@ -1,6 +1,8 @@
 package nix
 
 import (
+	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -25,6 +27,8 @@ type Nix struct {
 	sync.Mutex `json:"-"`
 	Logger     *slog.Logger `json:"-"`
 
+	NixPkgs string `json:"nixpkgs"`
+
 	Packages   []string `json:"packages"`
 	BubbleWrap `json:"-"`
 }
@@ -34,6 +38,10 @@ type BubbleWrap struct {
 	profilePath  string
 	userHome     string
 	nixStorePath string
+}
+
+type ProfileMetadata struct {
+	NixPkgsCommit string `json:"nixpkgs"`
 }
 
 func (b *BubbleWrap) ProfilePath() string {
@@ -49,6 +57,29 @@ func (b *BubbleWrap) ProfilePath() string {
 		b.profilePath = filepath.Join(XDGDataDir(), "profiles", b.ProfileName)
 	}
 	return b.profilePath
+}
+
+func (b *BubbleWrap) writeProfileMetadata(p ProfileMetadata) error {
+	b2, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(b.ProfilePath(), "metadata.json"), b2, 0o755)
+}
+
+func (b *BubbleWrap) ProfileMetadata() (*ProfileMetadata, error) {
+	meta, err := os.ReadFile(filepath.Join(b.ProfilePath(), "metadata.json"))
+	if err != nil {
+		return nil, err
+	}
+
+	var metadata ProfileMetadata
+
+	if err := json.Unmarshal(meta, &metadata); err != nil {
+		return nil, err
+	}
+
+	return &metadata, nil
 }
 
 func (b *BubbleWrap) UserHome() string {
@@ -146,10 +177,21 @@ func (n *Nix) SyncToDisk() error {
 	}
 
 	if n.ConfigFile != nil {
-		if err := os.WriteFile(*n.ConfigFile, b, 0o66); err != nil {
+		if err := os.WriteFile(*n.ConfigFile, b, 0o644); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func InitNixyFile(ctx context.Context, dest string) error {
+	n := Nix{ConfigFile: &dest}
+	metadata, err := n.ProfileMetadata()
+	if err != nil {
+		return err
+	}
+
+	n.NixPkgs = metadata.NixPkgsCommit
+	return n.SyncToDisk()
 }

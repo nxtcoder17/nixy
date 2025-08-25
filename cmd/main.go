@@ -53,10 +53,7 @@ func main() {
 				Action: func(ctx context.Context, c *cli.Command) error {
 					if _, err := os.Stat("nixy.yml"); err != nil {
 						if errors.Is(err, fs.ErrNotExist) {
-							if err := os.WriteFile("nixy.yml", []byte(`packages: []`), 0o644); err != nil {
-								return err
-							}
-							return nil
+							return nix.InitNixyFile(ctx, "nixy.yml")
 						}
 						return err
 					}

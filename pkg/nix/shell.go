@@ -43,6 +43,9 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 	var nightlyPkgs []string
 
 	for _, pkg := range n.Packages {
+		if !strings.HasPrefix(pkg, "nixpkgs/") {
+			pkg = fmt.Sprintf("nixpkgs/%s#%s", n.NixPkgs, pkg)
+		}
 		if strings.HasPrefix(pkg, "nixpkgs/") {
 			sp := strings.Split(pkg, "#")
 			if len(sp) != 2 {
@@ -62,11 +65,17 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		return err
 	}
 
+	profileSetupDir := n.ProfileSetupDir()
+	if n.Executor == BubbleWrapExecutor {
+		profileSetupDir = "/nixy-profile"
+	}
+
 	if err := t.ExecuteTemplate(f, "project-flake", map[string]any{
-		"nixPkgs":     nixPkgs,
-		"nightlyPkgs": nightlyPkgs,
-		"projectDir":  workspaceDir,
-		"profileDir":  "/nixy-profile",
+		"nixPkgs":       nixPkgs,
+		"nightlyPkgs":   nightlyPkgs,
+		"projectDir":    workspaceDir,
+		"profileDir":    profileSetupDir,
+		"nixpkgsCommit": n.NixPkgs,
 	}); err != nil {
 		return err
 	}
@@ -76,9 +85,8 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 	}
 
 	args := []string{
-		"shell", "nixpkgs#direnv", "--command", "bash", "-c",
+		"shell", fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs), "--command", "bash", "-c",
 		`
-direnv allow "$NIXY_PROFILE_DIR/project-dir"
 pushd $NIXY_PROFILE_DIR/project-dir
 cat flake.nix
 nix develop --override-input profile-flake $NIXY_PROFILE_DIR --command fish
