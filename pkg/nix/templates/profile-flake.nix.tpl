@@ -1,9 +1,10 @@
+{{- $nixpkgsCommit := .nixpkgsCommit }}
 {
   description = "nixy profile flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
+    nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsCommit}}";
+    flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
   };
 
   outputs = { self, nixpkgs, flake-utils }:
@@ -36,4 +37,3 @@
       }
     );
 }
-
