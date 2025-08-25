@@ -3,19 +3,94 @@ package nix
 import (
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"sigs.k8s.io/yaml"
 )
 
+type Executor string
+
+const (
+	LocalExecutor      Executor = "local"
+	DockerExecutor     Executor = "docker"
+	BubbleWrapExecutor Executor = "bubblewrap"
+)
+
 type Nix struct {
 	ConfigFile *string `json:"-"`
 
-	Packages []string `json:"packages"`
+	Executor Executor `json:"-"`
 
-	sync.Mutex
+	sync.Mutex `json:"-"`
+	Logger     *slog.Logger `json:"-"`
 
-	Logger *slog.Logger
+	Packages   []string `json:"packages"`
+	BubbleWrap `json:"-"`
+}
+
+type BubbleWrap struct {
+	ProfileName  string
+	profilePath  string
+	userHome     string
+	nixStorePath string
+}
+
+func (b *BubbleWrap) ProfilePath() string {
+	if b.ProfileName == "" {
+		if v, ok := os.LookupEnv("NIXY_PROFILE"); ok {
+			b.ProfileName = v
+		} else {
+			b.ProfileName = "default"
+		}
+	}
+
+	if b.profilePath == "" {
+		b.profilePath = filepath.Join(XDGDataDir(), "profiles", b.ProfileName)
+	}
+	return b.profilePath
+}
+
+func (b *BubbleWrap) UserHome() string {
+	if b.userHome == "" {
+		b.userHome = filepath.Join(b.ProfilePath(), "fake-home")
+	}
+	return b.userHome
+}
+
+func (b *BubbleWrap) NixDir() string {
+	if b.nixStorePath == "" {
+		b.nixStorePath = filepath.Join(b.ProfilePath(), "nix")
+	}
+	return b.nixStorePath
+}
+
+func (b *BubbleWrap) ProfileBinPath() string {
+	return filepath.Join(b.ProfilePath(), "bin")
+}
+
+func (b *BubbleWrap) ProfileSetupDir() string {
+	return filepath.Join(b.ProfilePath(), "setup")
+}
+
+func (b *BubbleWrap) createFSDirs() error {
+	if err := os.MkdirAll(b.UserHome(), 0o755); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(b.NixDir(), 0o755); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(b.ProfileBinPath(), 0o755); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(b.ProfileSetupDir(), 0o755); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func LoadFromFile(f string) (*Nix, error) {
@@ -31,6 +106,19 @@ func LoadFromFile(f string) (*Nix, error) {
 	}
 
 	nix.ConfigFile = &f
+
+	if nix.Executor == "" {
+		if v, ok := os.LookupEnv("NIXY_EXECUTOR"); ok {
+			nix.Executor = Executor(v)
+		}
+	}
+
+	switch nix.Executor {
+	case "":
+		nix.Executor = LocalExecutor
+	case BubbleWrapExecutor:
+		nix.BubbleWrap.createFSDirs()
+	}
 
 	return &nix, err
 }

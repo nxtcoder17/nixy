@@ -3,17 +3,14 @@ package nix
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strings"
 )
 
 func (nix *Nix) Install(ctx context.Context, pkgs ...string) error {
-	args := []string{
-		"shell",
-		"--log-format",
-		"bar-with-logs",
+	nixShellCommand := []string{
+		"nix", "shell", "--log-format", "bar-with-logs",
 	}
-	args = append(args, nix.Packages...)
+	nixShellCommand = append(nixShellCommand, nix.Packages...)
 
 	for _, pkg := range pkgs {
 		if strings.HasPrefix(pkg, "nixpkgs#") {
@@ -23,13 +20,19 @@ func (nix *Nix) Install(ctx context.Context, pkgs ...string) error {
 		}
 	}
 
-	args = append(args, pkgs...)
+	nixShellCommand = append(nixShellCommand, pkgs...)
+	nixShellCommand = append(nixShellCommand, "--command", "echo", "Successfully Downloaded")
 
-	cmd := exec.CommandContext(ctx, "nix", append(args, "--command", "echo", "Successfully Installed")...)
+	cmd, err := nix.PrepareNixCommand(ctx, nixShellCommand[0], nixShellCommand[1:])
+	if err != nil {
+		return err
+	}
 	cmd.Stdout = os.Stdout
+	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
+		nix.Logger.Error("FAILED to install nix packages", "command", cmd.String(), "err", err)
 		return err
 	}
 
