@@ -20,6 +20,11 @@ import (
 
 var Version string
 
+var (
+	NixyExecutor string = os.Getenv("NIXY_EXECUTOR")
+	NixyProfile  string = os.Getenv("NIXY_PROFILE")
+)
+
 func main() {
 	if Version == "" {
 		Version = fmt.Sprintf("nightly | %s", time.Now().Format(time.RFC3339))
@@ -56,6 +61,96 @@ func main() {
 						return err
 					}
 
+					return nil
+				},
+			},
+			{
+				Name:    "profile",
+				Usage:   "<pkgname>",
+				Suggest: true,
+				Commands: []*cli.Command{
+					{
+						Name:    "list",
+						Aliases: []string{"ls"},
+						Action: func(ctx context.Context, c *cli.Command) error {
+							profiles, err := nix.ProfileList(ctx)
+							if err != nil {
+								return err
+							}
+
+							for _, profile := range profiles {
+								fmt.Printf("🪪 %s (%s)\n", filepath.Base(profile), profile)
+							}
+							return nil
+						},
+					},
+					{
+						Name: "add",
+						Arguments: []cli.Argument{
+							&cli.StringArg{
+								Name:  "profile-name",
+								Value: os.Getenv("NIXY_PROFILE"),
+								Config: cli.StringConfig{
+									TrimSpace: true,
+								},
+								UsageText: "Name of Profile",
+							},
+						},
+						Aliases: []string{"new", "create"},
+						Action: func(ctx context.Context, c *cli.Command) error {
+							profileName := c.StringArg("profile-name")
+							if profileName == "" {
+								v, ok := os.LookupEnv("NIXY_PROFILE")
+								if !ok {
+									fmt.Println("Must Specify one argument")
+									return nil
+								}
+								profileName = v
+							}
+
+							if err := nix.ProfileCreate(ctx, c.StringArg("profile-name")); err != nil {
+								return err
+							}
+							return nil
+						},
+					},
+					{
+						Name: "edit",
+						Arguments: []cli.Argument{
+							&cli.StringArg{
+								Name: "profile-name",
+								Config: cli.StringConfig{
+									TrimSpace: true,
+								},
+								Value:     "",
+								UsageText: "Name of Profile",
+							},
+						},
+						Action: func(ctx context.Context, c *cli.Command) error {
+							profileName := c.StringArg("profile-name")
+							if profileName == "" {
+								v, ok := os.LookupEnv("NIXY_PROFILE")
+								if !ok {
+									fmt.Println("Must Specify one argument")
+									return nil
+								}
+								profileName = v
+							}
+
+							if err := nix.ProfileEdit(ctx, profileName); err != nil {
+								return err
+							}
+
+							return nil
+						},
+					},
+				},
+				Action: func(ctx context.Context, c *cli.Command) error {
+					v, ok := os.LookupEnv("NIXY_PROFILE")
+					if !ok {
+						v = "default"
+					}
+					fmt.Println(v)
 					return nil
 				},
 			},
@@ -124,7 +219,13 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 
 	switch {
 	case c.IsSet("file"):
-		return nix.LoadFromFile(c.String("file"))
+		n, err := nix.LoadFromFile(c.String("file"))
+		if err != nil {
+			return nil, err
+		}
+		n.Logger = logger.Slog()
+		return n, nil
+
 	default:
 		dir, err := os.Getwd()
 		if err != nil {
@@ -146,7 +247,12 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 					continue
 				}
 
-				return nix.LoadFromFile(filepath.Join(dir, fn))
+				n, err := nix.LoadFromFile(filepath.Join(dir, fn))
+				if err != nil {
+					return nil, err
+				}
+				n.Logger = logger.Slog()
+				return n, nil
 			}
 
 			oldDir = dir

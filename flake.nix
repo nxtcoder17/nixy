@@ -51,6 +51,7 @@
 
             # your packages here
             go
+            nginx
           ];
 
           shellHook = ''
