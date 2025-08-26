@@ -30,6 +30,15 @@ func main() {
 		Version = fmt.Sprintf("nightly | %s", time.Now().Format(time.RFC3339))
 	}
 
+	if NixyExecutor == "" {
+		// NixyExecutor = string(nix.LocalExecutor)
+		NixyExecutor = string(nix.BubbleWrapExecutor)
+	}
+
+	if NixyProfile == "" {
+		NixyProfile = "default"
+	}
+
 	cmd := cli.Command{
 		Name:        "nixy",
 		Version:     Version,
@@ -53,7 +62,7 @@ func main() {
 				Action: func(ctx context.Context, c *cli.Command) error {
 					if _, err := os.Stat("nixy.yml"); err != nil {
 						if errors.Is(err, fs.ErrNotExist) {
-							return nix.InitNixyFile(ctx, "nixy.yml")
+							return nix.InitNixyFile(ctx, "nixy.yml", NixyProfile, NixyExecutor)
 						}
 						return err
 					}
@@ -214,9 +223,14 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 
 	slog.SetDefault(logger.Slog())
 
+	ctx := nix.Context{
+		Executor: NixyExecutor,
+		Profile:  NixyProfile,
+	}
+
 	switch {
 	case c.IsSet("file"):
-		n, err := nix.LoadFromFile(c.String("file"))
+		n, err := nix.LoadFromFile(ctx, c.String("file"))
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +258,7 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 					continue
 				}
 
-				n, err := nix.LoadFromFile(filepath.Join(dir, fn))
+				n, err := nix.LoadFromFile(ctx, filepath.Join(dir, fn))
 				if err != nil {
 					return nil, err
 				}

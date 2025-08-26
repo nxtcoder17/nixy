@@ -47,7 +47,7 @@ func (nix *Nix) PrepareNixCommand(ctx context.Context, command string, args []st
 		opt = opts[0]
 	}
 
-	switch nix.Executor {
+	switch nix.executor {
 	case LocalExecutor:
 		{
 			return exec.CommandContext(ctx, command, args...), nil
@@ -140,40 +140,36 @@ func (nix *Nix) PrepareNixCommand(ctx context.Context, command string, args []st
 			"--tmpfs", "/tmp",
 
 			// Custom User Home for nixy BubbleWrap shell
-			"--bind", nix.BubbleWrap.UserHome(), "/home/nixy",
+			"--bind", nix.bubbleWrap.UserHome.HostPath, nix.bubbleWrap.UserHome.MountedPath,
 			"--clearenv",
-			"--setenv", "HOME", "/home/nixy",
+			"--setenv", "HOME", nix.bubbleWrap.UserHome.MountedPath,
 			"--setenv", "USER", os.Getenv("USER"),
 			"--setenv", "TERM", os.Getenv("TERM"),
 			"--setenv", "XDG_SESSION_TYPE", os.Getenv("XDG_SESSION_TYPE"),
 			"--setenv", "TERM_PROGRAM", os.Getenv("TERM_PROGRAM"),
-			"--setenv", "XDG_CACHE_HOME", "/home/nixy/.cache",
-			"--setenv", "XDG_CONFIG_HOME", "/home/nixy/.config",
-			"--setenv", "XDG_DATA_HOME", "/home/nixy/.local/share",
-			"--bind", nix.BubbleWrap.ProfileSetupDir(), "/nixy-profile",
-			"--setenv", "NIXY_PROFILE_DIR", "/nixy-profile",
-
-			// "--setenv", "SHELL", filepath.Base(os.Getenv("SHELL")),
+			"--setenv", "XDG_CACHE_HOME", filepath.Join(nix.bubbleWrap.UserHome.MountedPath, ".cache"),
+			"--setenv", "XDG_CONFIG_HOME", filepath.Join(nix.bubbleWrap.UserHome.MountedPath, ".config"),
+			"--setenv", "XDG_DATA_HOME", filepath.Join(nix.bubbleWrap.UserHome.MountedPath, ".local", "share"),
+			"--bind", nix.bubbleWrap.ProfileFlakeDir.HostPath, nix.bubbleWrap.ProfileFlakeDir.MountedPath,
+			"--bind", nix.bubbleWrap.WorkspacesDir.HostPath, nix.bubbleWrap.WorkspacesDir.MountedPath,
+			"--setenv", "NIXY_PROFILE_DIR", nix.bubbleWrap.ProfileFlakeDir.MountedPath,
 
 			// Nix Store for nixy bubblewrap shell
-			"--bind", nix.BubbleWrap.NixDir(), "/nix",
+			"--bind", nix.bubbleWrap.NixDir.HostPath, nix.bubbleWrap.NixDir.MountedPath,
 			"--dir", "/nix/var/nix",
-			"--ro-bind", nix.BubbleWrap.ProfileBinPath(), "/profile-bin",
-			"--setenv", "PATH", fmt.Sprintf("/profile-bin:%s", os.Getenv("PATH")),
+			"--setenv", "PATH", fmt.Sprintf("/nix/bin:%s", os.Getenv("PATH")),
 
 			// Current Working Directory as it is
 			"--bind", pwd, pwd,
 		}
 
 		bwrapArgs = append(bwrapArgs, roBinds...)
-		// bwrapArgs = append(bwrapArgs, "bash")
-		// bwrapArgs = append(bwrapArgs, "bash", "-c", fmt.Sprintf("/home/nixy/%s %s", command, strings.Join(args, " ")))
 		bwrapArgs = append(bwrapArgs, command)
 		bwrapArgs = append(bwrapArgs, args...)
 
 		return exec.CommandContext(ctx, "bwrap", bwrapArgs...), nil
 	default:
-		return nil, fmt.Errorf("unknown executor: %s, only local and docker executors are supported", nix.Executor)
+		return nil, fmt.Errorf("unknown executor: %s, only local and docker executors are supported", nix.executor)
 
 	}
 }

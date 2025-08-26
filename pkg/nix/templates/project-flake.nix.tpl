@@ -1,5 +1,4 @@
 {{- $nixPkgs := .nixPkgs }}
-{{- $nightlyPkgs := .nightlyPkgs }}
 {{- $projectDir := .projectDir }}
 {{- $profileDir := .profileDir }}
 {{- $nixpkgsCommit := .nixpkgsCommit }}
@@ -10,11 +9,13 @@
     nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsCommit}}";
     flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
 
+    {{- if $profileDir }}
     profile-flake = {
       url = "path:{{$profileDir}}";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
+    {{- end }}
 
     {{- range $k, $_ := $nixPkgs }}
     nixpkgs_{{slice $k 0 7}}.url = "github:nixos/nixpkgs/{{$k}}";
@@ -26,7 +27,7 @@
       {{- range $k, $_ := $nixPkgs -}}
       nixpkgs_{{slice $k 0 7}},
       {{- end }}
-      profile-flake
+      {{- if $profileDir }} profile-flake {{- end }}
     }:
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -54,13 +55,8 @@
         devShells.default = pkgs.mkShell {
           # hardeningDisable = [ "all" ];
 
-          buildInputs = with pkgs; [
-              {{- range $_, $v := $nightlyPkgs -}}
-              {{$v}}
-              {{- end }}
-            ]
-            ++ profile-flake.devShells.${system}.default.buildInputs
-            ++ [
+          buildInputs = {{- if $profileDir}}profile-flake.devShells.${system}.default.buildInputs
+            ++ {{- end }} [
               {{- range $k, $v := $nixPkgs -}}
               {{- range $pkg := $v }}
               pkgs_{{slice $k 0 7}}.{{$pkg}}
@@ -69,7 +65,7 @@
             ];
 
           shellHook = ''
-            pushd {{$projectDir}}
+            cd {{$projectDir}}
           '';
         };
       }

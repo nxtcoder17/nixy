@@ -2,7 +2,8 @@ package nix
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/md5"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,118 +20,32 @@ const (
 	BubbleWrapExecutor Executor = "bubblewrap"
 )
 
+type Context struct {
+	Executor string
+	Profile  string
+}
+
 type Nix struct {
 	ConfigFile *string `json:"-"`
 
-	Executor Executor `json:"-"`
+	executor Executor `json:"-"`
 
 	sync.Mutex `json:"-"`
 	Logger     *slog.Logger `json:"-"`
 
 	NixPkgs string `json:"nixpkgs"`
 
-	Packages   []string `json:"packages"`
-	BubbleWrap `json:"-"`
+	Packages   []string          `json:"packages"`
+	bubbleWrap BubbleWrapProfile `json:"-"`
 }
 
-type BubbleWrap struct {
-	ProfileName  string
-	profilePath  string
-	userHome     string
-	nixStorePath string
-}
-
-type ProfileMetadata struct {
-	NixPkgsCommit string `json:"nixpkgs"`
-}
-
-func (b *BubbleWrap) ProfilePath() string {
-	if b.ProfileName == "" {
-		if v, ok := os.LookupEnv("NIXY_PROFILE"); ok {
-			b.ProfileName = v
-		} else {
-			b.ProfileName = "default"
-		}
-	}
-
-	if b.profilePath == "" {
-		b.profilePath = filepath.Join(XDGDataDir(), "profiles", b.ProfileName)
-	}
-	return b.profilePath
-}
-
-func (b *BubbleWrap) writeProfileMetadata(p ProfileMetadata) error {
-	b2, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(b.ProfilePath(), "metadata.json"), b2, 0o755)
-}
-
-func (b *BubbleWrap) ProfileMetadata() (*ProfileMetadata, error) {
-	meta, err := os.ReadFile(filepath.Join(b.ProfilePath(), "metadata.json"))
-	if err != nil {
-		return nil, err
-	}
-
-	var metadata ProfileMetadata
-
-	if err := json.Unmarshal(meta, &metadata); err != nil {
-		return nil, err
-	}
-
-	return &metadata, nil
-}
-
-func (b *BubbleWrap) UserHome() string {
-	if b.userHome == "" {
-		b.userHome = filepath.Join(b.ProfilePath(), "fake-home")
-	}
-	return b.userHome
-}
-
-func (b *BubbleWrap) NixDir() string {
-	if b.nixStorePath == "" {
-		b.nixStorePath = filepath.Join(b.ProfilePath(), "nix")
-	}
-	return b.nixStorePath
-}
-
-func (b *BubbleWrap) ProfileBinPath() string {
-	return filepath.Join(b.ProfilePath(), "bin")
-}
-
-func (b *BubbleWrap) ProfileSetupDir() string {
-	return filepath.Join(b.ProfilePath(), "setup")
-}
-
-func (b *BubbleWrap) createFSDirs() error {
-	if err := os.MkdirAll(b.UserHome(), 0o755); err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(b.NixDir(), 0o755); err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(b.ProfileBinPath(), 0o755); err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(b.ProfileSetupDir(), 0o755); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func LoadFromFile(f string) (*Nix, error) {
+func LoadFromFile(ctx Context, f string) (*Nix, error) {
 	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}
 
-	nix := Nix{}
+	nix := Nix{bubbleWrap: UseBubbleWrap(ctx.Profile)}
 
 	if err := yaml.Unmarshal(b, &nix); err != nil {
 		return nil, err
@@ -138,20 +53,33 @@ func LoadFromFile(f string) (*Nix, error) {
 
 	nix.ConfigFile = &f
 
-	if nix.Executor == "" {
-		if v, ok := os.LookupEnv("NIXY_EXECUTOR"); ok {
-			nix.Executor = Executor(v)
-		}
+	nix.executor = Executor(ctx.Executor)
+	switch nix.executor {
+	case BubbleWrapExecutor:
+		nix.bubbleWrap.createFSDirs()
 	}
 
-	switch nix.Executor {
-	case "":
-		nix.Executor = LocalExecutor
-	case BubbleWrapExecutor:
-		nix.BubbleWrap.createFSDirs()
+	hostPath, _ := nix.FlakeDir()
+	if err := os.MkdirAll(hostPath, 0o755); err != nil {
+		return nil, err
 	}
 
 	return &nix, err
+}
+
+func (n *Nix) FlakeDir() (host, mounted string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	cwdHash := fmt.Sprintf("%x-%s", md5.New().Sum([]byte(cwd)), filepath.Base(cwd))
+
+	if n.executor == BubbleWrapExecutor {
+		return filepath.Join(n.bubbleWrap.WorkspacesDir.HostPath, cwdHash), filepath.Join(n.bubbleWrap.WorkspacesDir.MountedPath, cwdHash)
+	}
+	// For non-bubblewrap executors, use a temp nixy directory
+	return filepath.Join(os.TempDir(), "nixy", cwdHash), filepath.Join(os.TempDir(), "nixy", cwdHash)
 }
 
 func (n *Nix) SyncToDisk() error {
@@ -185,13 +113,25 @@ func (n *Nix) SyncToDisk() error {
 	return nil
 }
 
-func InitNixyFile(ctx context.Context, dest string) error {
-	n := Nix{ConfigFile: &dest}
-	metadata, err := n.ProfileMetadata()
+func InitNixyFile(ctx context.Context, dest string, profileName string, executor string) error {
+	n := Nix{ConfigFile: &dest, bubbleWrap: UseBubbleWrap(profileName)}
+
+	nixPkgsCommit, err := func() (string, error) {
+		switch Executor(executor) {
+		case BubbleWrapExecutor:
+			pm, err := n.bubbleWrap.ProfileMetadata()
+			if err != nil {
+				return "", err
+			}
+			return pm.NixPkgsCommit, nil
+		default:
+			return fetchCurrentNixpkgsHash(ctx)
+		}
+	}()
 	if err != nil {
 		return err
 	}
 
-	n.NixPkgs = metadata.NixPkgsCommit
+	n.NixPkgs = nixPkgsCommit
 	return n.SyncToDisk()
 }
