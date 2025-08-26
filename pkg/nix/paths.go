@@ -26,7 +26,7 @@ func (nix *Nix) PackagePaths(ctx context.Context) ([]string, error) {
 
 	paths := strings.Split(strings.TrimSpace(b.String()), "\n")
 
-	if nix.Executor == DockerExecutor {
+	if nix.executor == DockerExecutor {
 		for i := range paths {
 			paths[i] = strings.Replace(paths[i], "/nix", "~/.local/share/nixy", 1)
 		}
@@ -69,7 +69,7 @@ func (nix *Nix) LibPaths(ctx context.Context) ([]string, error) {
 
 	paths := strings.Split(strings.TrimSpace(b.String()), "\n")
 
-	if nix.Executor == DockerExecutor {
+	if nix.executor == DockerExecutor {
 		for i := range paths {
 			paths[i] = strings.Replace(paths[i], "/nix", "~/.local/share/nixy", 1)
 		}
