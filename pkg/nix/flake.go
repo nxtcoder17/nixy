@@ -1,3 +1,0 @@
-package nix
-
-// func Flake

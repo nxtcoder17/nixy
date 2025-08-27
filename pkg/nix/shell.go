@@ -58,11 +58,11 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		return err
 	}
 
-	hostFlakeDir, mountedFlakeDir := n.FlakeDir()
+	hostFlakeDir, _ := n.FlakeDir()
 
 	f, err := os.Create(filepath.Join(hostFlakeDir, "flake.nix"))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to crteate flake.nix at path: %s: %w", hostFlakeDir, err)
 	}
 
 	// Parse and organize packages by nixpkgs commit
@@ -78,44 +78,24 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		"projectDir": workspaceDir,
 		"profileDir": func() string {
 			if n.executor == BubbleWrapExecutor {
-				return n.bubbleWrap.ProfileFlakeDir.MountedPath
+				return n.bubbleWrap.ProfileFlakeDirMountedPath
 			}
-			return ""
+			return n.profile.ProfileFlakeDir
 		}(),
 		"nixpkgsCommit": n.NixPkgs,
 	}); err != nil {
 		return err
 	}
 
-	var nixDevelopArgs []string
-	if n.executor == BubbleWrapExecutor {
-		nixDevelopArgs = append(nixDevelopArgs, "--override-input", "profile-flake", n.bubbleWrap.ProfileFlakeDir.MountedPath)
-		nixDevelopArgs = append(nixDevelopArgs, "2> /dev/null")
-	}
-
-	nixDevelopArgs = append(nixDevelopArgs, "--command", shell)
-
-	// Prepare nix develop command
-	developCmd := fmt.Sprintf("cd %s && nix develop %s", mountedFlakeDir, strings.Join(nixDevelopArgs, " "))
-
-	slog.Debug("CD", "cmd", developCmd)
-
-	bashPkg := fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs)
-
-	args := []string{
-		"shell", bashPkg, "--command", "bash", "-c", developCmd,
-	}
-
-	cmd, err := n.PrepareNixCommand(ctx, "nix", args)
+	cmd, err := n.PrepareShellCommand(ctx, shell)
 	if err != nil {
 		return err
 	}
 
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-
 	cmd.Env = append(os.Environ(), envVars...)
+	cmd.Stderr = os.Stderr
 
 	slog.Debug("Executing", "command", cmd.String())
 
