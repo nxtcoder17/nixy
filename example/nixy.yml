@@ -1,0 +1,4 @@
+packages:
+- nixpkgs/b74a30dbc0a72e20df07d43109339f780b439291#python314
+- nixpkgs/b74a30dbc0a72e20df07d43109339f780b439291#curl
+- nixpkgs/b74a30dbc0a72e20df07d43109339f780b439291#nginx

@@ -5,6 +5,7 @@ tasks:
         - .go
     cmd:
       - go build -o ./bin/nixy ./cmd/main.go
+      - echo "Build Successful ✅"
 
   build:
     env:

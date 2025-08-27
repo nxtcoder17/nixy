@@ -48,10 +48,7 @@ func main() {
 				Action: func(ctx context.Context, c *cli.Command) error {
 					if _, err := os.Stat("nixy.yml"); err != nil {
 						if errors.Is(err, fs.ErrNotExist) {
-							if err := os.WriteFile("nixy.yml", []byte(`packages: []`), 0o644); err != nil {
-								return err
-							}
-							return nil
+							return nix.InitNixyFile(ctx, "nixy.yml")
 						}
 						return err
 					}
@@ -60,31 +57,121 @@ func main() {
 				},
 			},
 			{
-				Name:    "install",
+				Name:    "profile",
 				Usage:   "<pkgname>",
 				Suggest: true,
-				Action: func(ctx context.Context, c *cli.Command) error {
-					n, err := loadFromNixyfile(c)
-					if err != nil {
-						return err
-					}
+				Commands: []*cli.Command{
+					{
+						Name:    "list",
+						Aliases: []string{"ls"},
+						Action: func(ctx context.Context, c *cli.Command) error {
+							profiles, err := nix.ProfileList(ctx)
+							if err != nil {
+								return err
+							}
 
-					defer n.SyncToDisk()
-					if err := n.Install(ctx, c.Args().Slice()...); err != nil {
-						return err
+							for _, profile := range profiles {
+								fmt.Printf("🪪 %s (%s)\n", filepath.Base(profile), profile)
+							}
+							return nil
+						},
+					},
+					{
+						Name: "add",
+						Arguments: []cli.Argument{
+							&cli.StringArg{
+								Name:  "profile-name",
+								Value: os.Getenv("NIXY_PROFILE"),
+								Config: cli.StringConfig{
+									TrimSpace: true,
+								},
+								UsageText: "Name of Profile",
+							},
+						},
+						Aliases: []string{"new", "create"},
+						Action: func(ctx context.Context, c *cli.Command) error {
+							profileName := c.StringArg("profile-name")
+							if profileName == "" {
+								v, ok := os.LookupEnv("NIXY_PROFILE")
+								if !ok {
+									fmt.Println("Must Specify one argument")
+									return nil
+								}
+								profileName = v
+							}
+
+							if err := nix.ProfileCreate(ctx, c.StringArg("profile-name")); err != nil {
+								return err
+							}
+							return nil
+						},
+					},
+					{
+						Name: "edit",
+						Arguments: []cli.Argument{
+							&cli.StringArg{
+								Name: "profile-name",
+								Config: cli.StringConfig{
+									TrimSpace: true,
+								},
+								Value:     "",
+								UsageText: "Name of Profile",
+							},
+						},
+						Action: func(ctx context.Context, c *cli.Command) error {
+							profileName := c.StringArg("profile-name")
+							if profileName == "" {
+								v, ok := os.LookupEnv("NIXY_PROFILE")
+								if !ok {
+									fmt.Println("Must Specify one argument")
+									return nil
+								}
+								profileName = v
+							}
+
+							if err := nix.ProfileEdit(ctx, profileName); err != nil {
+								return err
+							}
+
+							return nil
+						},
+					},
+				},
+				Action: func(ctx context.Context, c *cli.Command) error {
+					v, ok := os.LookupEnv("NIXY_PROFILE")
+					if !ok {
+						v = "default"
 					}
+					fmt.Println(v)
 					return nil
 				},
 			},
+			// {
+			// 	Name:    "install",
+			// 	Usage:   "<pkgname>",
+			// 	Suggest: true,
+			// 	Action: func(ctx context.Context, c *cli.Command) error {
+			// 		n, err := loadFromNixyfile(c)
+			// 		if err != nil {
+			// 			return err
+			// 		}
+			//
+			// 		defer n.SyncToDisk()
+			// 		n.Packages = append(n.Packages, )
+			// 		if err := n.Install(ctx, c.Args().Slice()...); err != nil {
+			// 			return err
+			// 		}
+			// 		return nil
+			// 	},
+			// },
 			{
 				Name:    "shell",
 				Suggest: true,
 				Action: func(ctx context.Context, c *cli.Command) error {
-					n, err := loadFromNixyfile(c)
+					n, err := loadFromNixyfile(ctx, c)
 					if err != nil {
 						return err
 					}
-					defer n.SyncToDisk()
 
 					if err := n.Shell(ctx, c.Args().First()); err != nil {
 						return err
@@ -111,7 +198,7 @@ func main() {
 	}
 }
 
-func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
+func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nix.Nix, error) {
 	logger := fastlog.New(fastlog.Options{
 		Writer:        os.Stderr,
 		Format:        fastlog.ConsoleFormat,
@@ -124,7 +211,8 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 
 	switch {
 	case c.IsSet("file"):
-		return nix.LoadFromFile(c.String("file"))
+		return nix.LoadFromFile(ctx, c.String("file"))
+
 	default:
 		dir, err := os.Getwd()
 		if err != nil {
@@ -146,7 +234,7 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 					continue
 				}
 
-				return nix.LoadFromFile(filepath.Join(dir, fn))
+				return nix.LoadFromFile(ctx, filepath.Join(dir, fn))
 			}
 
 			oldDir = dir
