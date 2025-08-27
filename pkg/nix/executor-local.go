@@ -33,13 +33,15 @@ func (nix *Nix) localShell(ctx context.Context, program string) (*exec.Cmd, erro
 
 	nixShellArgs := []string{
 		"shell",
+		"--extra-experimental-features",
+		"nix-command flakes",
 		fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
 		"--command",
 		"bash",
 		"-c",
 		strings.Join(append(script,
 			fmt.Sprintf("cd %s", hostWorkspacePath),
-			fmt.Sprintf("nix develop --override-input profile-flake %s --command %s", nix.profile.ProfileFlakeDir, program),
+			fmt.Sprintf("nix develop --extra-experimental-features 'nix-command flakes' --override-input profile-flake %s --command %s", nix.profile.ProfileFlakeDir, program),
 		), "\n"),
 	}
 

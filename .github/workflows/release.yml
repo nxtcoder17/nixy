@@ -31,6 +31,7 @@ jobs:
         with:
           name: ${{steps.meta.outputs.version}}
           github_token: ${{ github.token }}
+          pre_release: ${{ !fromJSON(steps.meta.outputs.is_tag) }}
 
   build-binaries:
     runs-on: ubuntu-latest
