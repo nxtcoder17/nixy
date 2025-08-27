@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"text/template"
 )
 
 // ProfileList returns all available profiles
@@ -35,46 +34,19 @@ func ProfileList(ctx context.Context) ([]string, error) {
 
 // ProfileCreate creates a new profile with the given name
 func ProfileCreate(ctx context.Context, name string) error {
-	n := Nix{executor: BubbleWrapExecutor, bubbleWrap: UseBubbleWrap(name)}
-	n.bubbleWrap.createFSDirs()
-
-	if err := downloadStaticNixBinary(ctx, filepath.Join(n.bubbleWrap.NixBinDir, "nix")); err != nil {
-		return err
-	}
-
-	nixpkgsHash, err := fetchCurrentNixpkgsHash(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := n.bubbleWrap.writeProfileMetadata(ProfileMetadata{NixPkgsCommit: nixpkgsHash}); err != nil {
-		return err
-	}
-
-	f, err := os.Create(filepath.Join(n.bubbleWrap.ProfileFlakeDir.HostPath, "flake.nix"))
-	if err != nil {
-		return err
-	}
-
-	t := template.New("profile-flake")
-	if _, err := t.Parse(templateProfileFlake); err != nil {
-		return err
-	}
-	if err := t.ExecuteTemplate(f, "profile-flake", map[string]any{
-		"nixpkgsCommit": nixpkgsHash,
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	_, err := NewProfile(ctx, name)
+	return err
 }
 
 // ProfileEdit opens the profile's flake.nix in the user's editor
 func ProfileEdit(ctx context.Context, name string) error {
-	n := Nix{executor: BubbleWrapExecutor, bubbleWrap: UseBubbleWrap(name)}
+	profile, err := NewProfile(ctx, name)
+	if err != nil {
+		return err
+	}
 
 	cmd := exec.CommandContext(ctx, os.Getenv("EDITOR"), "flake.nix")
-	cmd.Dir = n.bubbleWrap.ProfileFlakeDir.HostPath
+	cmd.Dir = profile.ProfileFlakeDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

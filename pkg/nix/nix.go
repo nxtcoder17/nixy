@@ -21,7 +21,7 @@ const (
 )
 
 type Context struct {
-	Executor string
+	Executor Executor
 	Profile  string
 }
 
@@ -35,17 +35,41 @@ type Nix struct {
 
 	NixPkgs string `json:"nixpkgs"`
 
-	Packages   []string          `json:"packages"`
-	bubbleWrap BubbleWrapProfile `json:"-"`
+	Packages   []string    `json:"packages"`
+	profile    *Profile    `json:"-"`
+	bubbleWrap *BubbleWrap `json:"-"`
 }
 
-func LoadFromFile(ctx Context, f string) (*Nix, error) {
+func GetCurrentNixyProfile() string {
+	if v, ok := os.LookupEnv("NIXY_PROFILE"); ok {
+		return v
+	}
+	return "default"
+}
+
+func GetCurrentNixyExecutor() Executor {
+	if v, ok := os.LookupEnv("NIXY_EXECUTOR"); ok {
+		return Executor(v)
+	}
+	return LocalExecutor
+}
+
+func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}
 
-	nix := Nix{bubbleWrap: UseBubbleWrap(ctx.Profile)}
+	profile, err := NewProfile(ctx, GetCurrentNixyProfile())
+
+	nix := Nix{profile: profile, executor: GetCurrentNixyExecutor(), Logger: slog.Default()}
+	if nix.executor == BubbleWrapExecutor {
+		bwrap, err := UseBubbleWrap(profile)
+		if err != nil {
+			return nil, err
+		}
+		nix.bubbleWrap = bwrap
+	}
 
 	if err := yaml.Unmarshal(b, &nix); err != nil {
 		return nil, err
@@ -53,33 +77,30 @@ func LoadFromFile(ctx Context, f string) (*Nix, error) {
 
 	nix.ConfigFile = &f
 
-	nix.executor = Executor(ctx.Executor)
-	switch nix.executor {
-	case BubbleWrapExecutor:
-		nix.bubbleWrap.createFSDirs()
-	}
-
 	hostPath, _ := nix.FlakeDir()
+
 	if err := os.MkdirAll(hostPath, 0o755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create dir %s: %s", hostPath, err)
 	}
 
-	return &nix, err
+	return &nix, nil
 }
 
 func (n *Nix) FlakeDir() (host, mounted string) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("FAILED to read current working directory: %w", err))
 	}
 
-	cwdHash := fmt.Sprintf("%x-%s", md5.New().Sum([]byte(cwd)), filepath.Base(cwd))
+	cwdHash := fmt.Sprintf("%x-%s", md5.Sum([]byte(cwd)), filepath.Base(cwd))
+
+	hostPath := filepath.Join(n.profile.WorkspacesDir, cwdHash)
 
 	if n.executor == BubbleWrapExecutor {
-		return filepath.Join(n.bubbleWrap.WorkspacesDir.HostPath, cwdHash), filepath.Join(n.bubbleWrap.WorkspacesDir.MountedPath, cwdHash)
+		return hostPath, filepath.Join(n.bubbleWrap.WorkspacesDirMountedPath, cwdHash)
 	}
-	// For non-bubblewrap executors, use a temp nixy directory
-	return filepath.Join(os.TempDir(), "nixy", cwdHash), filepath.Join(os.TempDir(), "nixy", cwdHash)
+	// For non-bubblewrap executors, use profile workspaces directory
+	return hostPath, hostPath
 }
 
 func (n *Nix) SyncToDisk() error {
@@ -113,25 +134,12 @@ func (n *Nix) SyncToDisk() error {
 	return nil
 }
 
-func InitNixyFile(ctx context.Context, dest string, profileName string, executor string) error {
-	n := Nix{ConfigFile: &dest, bubbleWrap: UseBubbleWrap(profileName)}
-
-	nixPkgsCommit, err := func() (string, error) {
-		switch Executor(executor) {
-		case BubbleWrapExecutor:
-			pm, err := n.bubbleWrap.ProfileMetadata()
-			if err != nil {
-				return "", err
-			}
-			return pm.NixPkgsCommit, nil
-		default:
-			return fetchCurrentNixpkgsHash(ctx)
-		}
-	}()
+func InitNixyFile(ctx context.Context, dest string) error {
+	profile, err := NewProfile(ctx, GetCurrentNixyProfile())
 	if err != nil {
 		return err
 	}
 
-	n.NixPkgs = nixPkgsCommit
+	n := Nix{ConfigFile: &dest, NixPkgs: profile.NixPkgsCommitHash}
 	return n.SyncToDisk()
 }

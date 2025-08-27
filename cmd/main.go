@@ -20,23 +20,9 @@ import (
 
 var Version string
 
-var (
-	NixyExecutor string = os.Getenv("NIXY_EXECUTOR")
-	NixyProfile  string = os.Getenv("NIXY_PROFILE")
-)
-
 func main() {
 	if Version == "" {
 		Version = fmt.Sprintf("nightly | %s", time.Now().Format(time.RFC3339))
-	}
-
-	if NixyExecutor == "" {
-		// NixyExecutor = string(nix.LocalExecutor)
-		NixyExecutor = string(nix.BubbleWrapExecutor)
-	}
-
-	if NixyProfile == "" {
-		NixyProfile = "default"
 	}
 
 	cmd := cli.Command{
@@ -62,7 +48,7 @@ func main() {
 				Action: func(ctx context.Context, c *cli.Command) error {
 					if _, err := os.Stat("nixy.yml"); err != nil {
 						if errors.Is(err, fs.ErrNotExist) {
-							return nix.InitNixyFile(ctx, "nixy.yml", NixyProfile, NixyExecutor)
+							return nix.InitNixyFile(ctx, "nixy.yml")
 						}
 						return err
 					}
@@ -160,32 +146,32 @@ func main() {
 					return nil
 				},
 			},
-			{
-				Name:    "install",
-				Usage:   "<pkgname>",
-				Suggest: true,
-				Action: func(ctx context.Context, c *cli.Command) error {
-					n, err := loadFromNixyfile(c)
-					if err != nil {
-						return err
-					}
-
-					defer n.SyncToDisk()
-					if err := n.Install(ctx, c.Args().Slice()...); err != nil {
-						return err
-					}
-					return nil
-				},
-			},
+			// {
+			// 	Name:    "install",
+			// 	Usage:   "<pkgname>",
+			// 	Suggest: true,
+			// 	Action: func(ctx context.Context, c *cli.Command) error {
+			// 		n, err := loadFromNixyfile(c)
+			// 		if err != nil {
+			// 			return err
+			// 		}
+			//
+			// 		defer n.SyncToDisk()
+			// 		n.Packages = append(n.Packages, )
+			// 		if err := n.Install(ctx, c.Args().Slice()...); err != nil {
+			// 			return err
+			// 		}
+			// 		return nil
+			// 	},
+			// },
 			{
 				Name:    "shell",
 				Suggest: true,
 				Action: func(ctx context.Context, c *cli.Command) error {
-					n, err := loadFromNixyfile(c)
+					n, err := loadFromNixyfile(ctx, c)
 					if err != nil {
 						return err
 					}
-					defer n.SyncToDisk()
 
 					if err := n.Shell(ctx, c.Args().First()); err != nil {
 						return err
@@ -212,7 +198,7 @@ func main() {
 	}
 }
 
-func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
+func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nix.Nix, error) {
 	logger := fastlog.New(fastlog.Options{
 		Writer:        os.Stderr,
 		Format:        fastlog.ConsoleFormat,
@@ -223,19 +209,9 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 
 	slog.SetDefault(logger.Slog())
 
-	ctx := nix.Context{
-		Executor: NixyExecutor,
-		Profile:  NixyProfile,
-	}
-
 	switch {
 	case c.IsSet("file"):
-		n, err := nix.LoadFromFile(ctx, c.String("file"))
-		if err != nil {
-			return nil, err
-		}
-		n.Logger = logger.Slog()
-		return n, nil
+		return nix.LoadFromFile(ctx, c.String("file"))
 
 	default:
 		dir, err := os.Getwd()
@@ -258,12 +234,7 @@ func loadFromNixyfile(c *cli.Command) (*nix.Nix, error) {
 					continue
 				}
 
-				n, err := nix.LoadFromFile(ctx, filepath.Join(dir, fn))
-				if err != nil {
-					return nil, err
-				}
-				n.Logger = logger.Slog()
-				return n, nil
+				return nix.LoadFromFile(ctx, filepath.Join(dir, fn))
 			}
 
 			oldDir = dir

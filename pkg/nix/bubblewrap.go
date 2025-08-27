@@ -1,100 +1,140 @@
 package nix
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
-type MountedDir struct {
-	HostPath    string
-	MountedPath string
+type BubbleWrap struct {
+	profile *Profile
+
+	ProfileFlakeDirMountedPath string
+	FakeHomeMountedPath        string
+	NixDirMountedPath          string
+	WorkspacesDirMountedPath   string
+	StaticNixBinMountedPath    string
 }
 
-type BubbleWrapProfile struct {
-	HostPath         string
-	MetadataHostPath string
+func UseBubbleWrap(profile *Profile) (*BubbleWrap, error) {
+	bwrap := BubbleWrap{
+		profile: profile,
 
-	ProfileFlakeDir MountedDir
-
-	UserHome      MountedDir
-	NixDir        MountedDir
-	NixBinDir     string
-	WorkspacesDir MountedDir
-}
-
-func UseBubbleWrap(profileName string) BubbleWrapProfile {
-	if profileName == "" {
-		if v, ok := os.LookupEnv("NIXY_PROFILE"); ok {
-			profileName = v
-		} else {
-			profileName = "default"
-		}
+		ProfileFlakeDirMountedPath: "/profile",
+		FakeHomeMountedPath:        "/home/nixy",
+		NixDirMountedPath:          "/nix",
+		WorkspacesDirMountedPath:   "/home/nixy/workspaces",
+		StaticNixBinMountedPath:    "/nix/bin/nix",
 	}
 
-	profilePath := filepath.Join(XDGDataDir(), "profiles", profileName)
+	return &bwrap, nil
+}
 
-	nixDirHostPath := filepath.Join(profilePath, "nix")
-
-	return BubbleWrapProfile{
-		HostPath:         profilePath,
-		MetadataHostPath: filepath.Join(profilePath, "metadata.json"),
-
-		ProfileFlakeDir: MountedDir{
-			HostPath:    filepath.Join(profilePath, "profile-flake"),
-			MountedPath: "/profile",
-		},
-
-		UserHome: MountedDir{
-			HostPath:    filepath.Join(profilePath, "home"),
-			MountedPath: "/home/nixy",
-		},
-		NixDir: MountedDir{
-			HostPath:    nixDirHostPath,
-			MountedPath: "/nix",
-		},
-		NixBinDir: filepath.Join(nixDirHostPath, "bin"),
-		WorkspacesDir: MountedDir{
-			HostPath:    filepath.Join(profilePath, "workspaces"),
-			MountedPath: "/workspaces",
-		},
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
 	}
-}
-
-type ProfileMetadata struct {
-	NixPkgsCommit string `json:"nixpkgs"`
-}
-
-func (b *BubbleWrapProfile) writeProfileMetadata(p ProfileMetadata) error {
-	b2, err := json.Marshal(p)
-	if err != nil {
-		return err
+	if errors.Is(err, fs.ErrNotExist) {
+		return false
 	}
-	return os.WriteFile(b.MetadataHostPath, b2, 0o755)
+	return false
 }
 
-func (b *BubbleWrapProfile) ProfileMetadata() (*ProfileMetadata, error) {
-	meta, err := os.ReadFile(b.MetadataHostPath)
+func (nix *Nix) bubblewrapShell(ctx context.Context, program string) (*exec.Cmd, error) {
+	pwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 
-	var metadata ProfileMetadata
-
-	if err := json.Unmarshal(meta, &metadata); err != nil {
-		return nil, err
+	roBinds := []string{
+		"--ro-bind", "/bin", "/bin",
+		"--ro-bind", "/etc", "/etc",
+		// "--ro-bind", "/etc/hosts", "/etc/hosts",
+		// "--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
+		"--ro-bind", "/lib", "/lib",
+		"--ro-bind", "/lib64", "/lib64",
+		"--ro-bind", "/run", "/run",
+		"--ro-bind", "/usr", "/usr",
+		"--ro-bind", "/var", "/var",
 	}
 
-	return &metadata, nil
-}
+	bwrapArgs := []string{
+		// no-zombie processes
+		"--die-with-parent",
+		// "--new-session",
 
-func (b *BubbleWrapProfile) createFSDirs() error {
-	dirs := []string{b.UserHome.HostPath, b.NixDir.HostPath, b.NixBinDir, b.WorkspacesDir.HostPath, b.ProfileFlakeDir.HostPath}
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+		// share nothing, but the internet for deps downloading
+		// "--unshare-user", "--unshare-pid", "--unshare-ipc",
+		"--unshare-all",
+		"--share-net",
+
+		// for files to have the same UID, and GUID as on the host
+		"--uid", fmt.Sprint(os.Geteuid()), "--gid", fmt.Sprint(os.Getegid()),
+
+		// for DNS resolution
+		"--ro-bind-try", "/run/systemd/resolve", "/run/systemd/resolve",
+
+		// the usual mounts
+		"--proc", "/proc",
+		"--dev", "/dev",
+		"--tmpfs", "/tmp",
+
+		// Custom User Home for nixy BubbleWrap shell
+		"--bind", nix.profile.FakeHomeDir, nix.bubbleWrap.FakeHomeMountedPath,
+		"--clearenv",
+		"--setenv", "HOME", nix.bubbleWrap.FakeHomeMountedPath,
+		"--setenv", "USER", os.Getenv("USER"),
+		"--setenv", "TERM", os.Getenv("TERM"),
+		"--setenv", "XDG_SESSION_TYPE", os.Getenv("XDG_SESSION_TYPE"),
+		"--setenv", "TERM_PROGRAM", os.Getenv("TERM_PROGRAM"),
+		"--setenv", "XDG_CACHE_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".cache"),
+		"--setenv", "XDG_CONFIG_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".config"),
+		"--setenv", "XDG_DATA_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".local", "share"),
+		"--bind", nix.profile.ProfileFlakeDir, nix.bubbleWrap.ProfileFlakeDirMountedPath,
+		"--bind", nix.profile.WorkspacesDir, nix.bubbleWrap.WorkspacesDirMountedPath,
+
+		// Nix Store for nixy bubblewrap shell
+		"--bind", nix.profile.NixDir, nix.bubbleWrap.NixDirMountedPath,
+		"--bind", nix.profile.StaticNixBinPath, nix.bubbleWrap.StaticNixBinMountedPath,
+		// "--setenv", "PATH", fmt.Sprintf("/nix/bin:%s", os.Getenv("PATH")),
+
+		// Current Working Directory as it is
+		"--bind", pwd, pwd,
+	}
+
+	_, mountedWorkspacePath := nix.FlakeDir()
+
+	if !exists(nix.profile.StaticNixBinPath) {
+		if err := downloadStaticNixBinary(ctx, nix.profile.StaticNixBinPath); err != nil {
+			return nil, err
 		}
 	}
 
-	return nil
+	nixShell := []string{
+		nix.bubbleWrap.StaticNixBinMountedPath,
+		"--extra-experimental-features",
+		"nix-command flakes",
+		"shell",
+		fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
+		"--command",
+		"bash",
+		"-c",
+		strings.Join([]string{
+			fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(nix.bubbleWrap.StaticNixBinMountedPath)),
+			fmt.Sprintf("cd %s", mountedWorkspacePath),
+			fmt.Sprintf("nix --extra-experimental-features 'nix-command flakes'  develop --override-input profile-flake %s --command %s", nix.bubbleWrap.ProfileFlakeDirMountedPath, program),
+			// fmt.Sprintf("nix --extra-experimental-features 'nix-command flakes' develop --command %s", program),
+		}, "\n"),
+	}
+
+	bwrapArgs = append(bwrapArgs, roBinds...)
+	bwrapArgs = append(bwrapArgs, nixShell...)
+
+	return exec.CommandContext(ctx, "bwrap", bwrapArgs...), nil
 }
