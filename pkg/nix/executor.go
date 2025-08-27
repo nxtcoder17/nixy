@@ -14,10 +14,6 @@ type ExecutorOpts struct {
 	IsNotTTY bool
 }
 
-func createDir(dir string) error {
-	return os.MkdirAll(dir, 0o755)
-}
-
 func XDGDataDir() string {
 	xdgDataHome := os.Getenv("XDG_DATA_HOME")
 	if xdgDataHome != "" {
@@ -25,20 +21,6 @@ func XDGDataDir() string {
 	}
 
 	return filepath.Join(xdgDataHome, "nixy")
-}
-
-func parseShell() (string, error) {
-	realPath, err := filepath.EvalSymlinks(os.Getenv("SHELL"))
-	if err != nil {
-		return "", err
-	}
-
-	absPath, err := filepath.Abs(realPath)
-	if err != nil {
-		return "", err
-	}
-
-	return absPath, nil
 }
 
 func (nix *Nix) PrepareNixCommand(ctx context.Context, command string, args []string, opts ...ExecutorOpts) (*exec.Cmd, error) {
@@ -102,8 +84,6 @@ func (nix *Nix) PrepareNixCommand(ctx context.Context, command string, args []st
 			return nil, err
 		}
 
-		shellPath, err := parseShell()
-
 		roBinds := []string{
 			"--ro-bind", "/bin", "/bin",
 			"--ro-bind", "/etc", "/etc",
@@ -112,10 +92,6 @@ func (nix *Nix) PrepareNixCommand(ctx context.Context, command string, args []st
 			"--ro-bind", "/run", "/run",
 			"--ro-bind", "/usr", "/usr",
 			"--ro-bind", "/var", "/var",
-
-			"--dir", filepath.Dir(shellPath),
-			"--bind", shellPath, shellPath,
-			"--setenv", "SHELL", shellPath,
 		}
 
 		bwrapArgs := []string{
