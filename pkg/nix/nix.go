@@ -25,6 +25,14 @@ type Context struct {
 	Profile  string
 }
 
+// URLPackage represents a custom package to be fetched from a URL
+type URLPackage struct {
+	Name   string `json:"name"`
+	URL    string `json:"url"`
+	Sha256 string `json:"sha256,omitempty"`
+	Type   string `json:"type,omitempty"` // "binary" or "archive", auto-detected if empty
+}
+
 type Nix struct {
 	ConfigFile *string `json:"-"`
 
@@ -37,9 +45,10 @@ type Nix struct {
 	bubbleWrap *BubbleWrap `json:"-"`
 	docker     *Docker     `json:"-"`
 
-	NixPkgs   string   `json:"nixpkgs"`
-	Packages  []string `json:"packages"`
-	Libraries []string `json:"libraries,omitempty"`
+	NixPkgs       string              `json:"nixpkgs"`
+	InputPackages []any               `json:"packages"` // Can be string or PackageConfig
+	Packages      []NormalizedPackage `json:"-"`
+	Libraries     []string            `json:"libraries,omitempty"`
 
 	ShellHook string `json:"shellHook,omitempty"`
 }
@@ -95,6 +104,13 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		return nil, fmt.Errorf("failed to create dir %s: %s", hostPath, err)
 	}
 
+	np, err := nix.parseAndUpdatePackageList()
+	if err != nil {
+		return nil, err
+	}
+
+	nix.Packages = np
+
 	return &nix, nil
 }
 
@@ -129,18 +145,39 @@ func (n *Nix) SyncToDisk() error {
 	n.Lock()
 	defer n.Unlock()
 
-	upkg := make([]string, 0, len(n.Packages))
+	// Deduplicate packages while preserving any type
+	upkg := make([]any, 0, len(n.InputPackages))
+	set := make(map[string]struct{}, len(n.InputPackages))
 
-	set := make(map[string]struct{}, len(n.Packages))
-	for _, pkg := range n.Packages {
-		if _, ok := set[pkg]; ok {
+	for _, pkg := range n.InputPackages {
+		var key string
+		switch v := pkg.(type) {
+		case string:
+			key = v
+		case map[string]any:
+			// For URL packages, use name as key
+			if name, ok := v["name"].(string); ok {
+				key = name
+			}
+		case URLPackage:
+			// For URL packages, use name as key
+			key = v.Name
+		default:
+			fmt.Printf("go type: %T", v)
+		}
+
+		if key == "" {
+			return fmt.Errorf("[SHOULD NEVER HAPPEN] failed to decide key for keeping packages unique")
+		}
+
+		if _, ok := set[key]; ok {
 			continue
 		}
-		set[pkg] = struct{}{}
+		set[key] = struct{}{}
 		upkg = append(upkg, pkg)
 	}
 
-	n.Packages = upkg
+	n.InputPackages = upkg
 
 	b, err := yaml.Marshal(n)
 	if err != nil {
