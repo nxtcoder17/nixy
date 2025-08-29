@@ -28,6 +28,8 @@
           # hardeningDisable = [ "all" ];
 
           buildInputs = with pkgs; [
+            uutils-coreutils-noprefix
+            ncurses
             # your packages here
           ];
 
