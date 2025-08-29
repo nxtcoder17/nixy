@@ -33,11 +33,15 @@ type Nix struct {
 	sync.Mutex `json:"-"`
 	Logger     *slog.Logger `json:"-"`
 
-	NixPkgs string `json:"nixpkgs"`
-
-	Packages   []string    `json:"packages"`
 	profile    *Profile    `json:"-"`
 	bubbleWrap *BubbleWrap `json:"-"`
+	docker     *Docker     `json:"-"`
+
+	NixPkgs   string   `json:"nixpkgs"`
+	Packages  []string `json:"packages"`
+	Libraries []string `json:"libraries,omitempty"`
+
+	ShellHook string `json:"shellHook,omitempty"`
 }
 
 func GetCurrentNixyProfile() string {
@@ -71,13 +75,21 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		nix.bubbleWrap = bwrap
 	}
 
+	if nix.executor == DockerExecutor {
+		docker, err := UseDocker(profile)
+		if err != nil {
+			return nil, err
+		}
+		nix.docker = docker
+	}
+
 	if err := yaml.Unmarshal(b, &nix); err != nil {
 		return nil, err
 	}
 
 	nix.ConfigFile = &f
 
-	hostPath, _ := nix.FlakeDir()
+	hostPath, _ := nix.WorkspaceFlakeDir()
 
 	if err := os.MkdirAll(hostPath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create dir %s: %s", hostPath, err)
@@ -86,7 +98,7 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 	return &nix, nil
 }
 
-func (n *Nix) FlakeDir() (host, mounted string) {
+func (n *Nix) WorkspaceFlakeDir() (host, mounted string) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		panic(fmt.Errorf("FAILED to read current working directory: %w", err))
@@ -96,11 +108,21 @@ func (n *Nix) FlakeDir() (host, mounted string) {
 
 	hostPath := filepath.Join(n.profile.WorkspacesDir, cwdHash)
 
-	if n.executor == BubbleWrapExecutor {
+	switch n.executor {
+	case BubbleWrapExecutor:
 		return hostPath, filepath.Join(n.bubbleWrap.WorkspacesDirMountedPath, cwdHash)
+	case DockerExecutor:
+		return hostPath, filepath.Join(n.docker.WorkspacesDirMountedPath, cwdHash)
 	}
-	// For non-bubblewrap executors, use profile workspaces directory
+
 	return hostPath, hostPath
+}
+
+func (n *Nix) ProfileFlakeDir() (host, mounted string) {
+	if n.executor == BubbleWrapExecutor {
+		return n.profile.ProfileFlakeDir, n.bubbleWrap.ProfileFlakeDirMountedPath
+	}
+	return n.profile.ProfileFlakeDir, n.profile.ProfileFlakeDir
 }
 
 func (n *Nix) SyncToDisk() error {

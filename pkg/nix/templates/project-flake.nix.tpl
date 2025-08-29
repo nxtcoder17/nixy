@@ -1,12 +1,17 @@
-{{- $nixPkgs := .nixPkgs }}
+{{- $nixpkgsList := .nixpkgsCommitList }}
+{{- $packagesMap := .packagesMap }}
+{{- $librariesMap := .librariesMap }}
+
 {{- $projectDir := .projectDir }}
 {{- $profileDir := .profileDir }}
-{{- $nixpkgsCommit := .nixpkgsCommit }}
+{{- $nixpkgsDefaultCommit := .nixpkgsDefaultCommit }}
+{{- $shellHook := .shellHook }}
+
 {
   description = "nixy project development workspace";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsCommit}}";
+    nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsDefaultCommit}}";
     flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
 
     {{- if $profileDir }}
@@ -17,15 +22,15 @@
     };
     {{- end }}
 
-    {{- range $k, $_ := $nixPkgs }}
-    nixpkgs_{{slice $k 0 7}}.url = "github:nixos/nixpkgs/{{$k}}";
+    {{- range $_, $v := $nixpkgsList }}
+    nixpkgs_{{slice $v 0 7}}.url = "github:nixos/nixpkgs/{{$v}}";
     {{- end }}
   };
 
   outputs = {
       self, nixpkgs, flake-utils,
-      {{- range $k, $_ := $nixPkgs -}}
-      nixpkgs_{{slice $k 0 7}},
+      {{- range $_, $v := $nixpkgsList -}}
+      nixpkgs_{{slice $v 0 7}},
       {{- end }}
       {{- if $profileDir }} profile-flake {{- end }}
     }:
@@ -36,7 +41,7 @@
           config.allowUnfree = true;
         };
 
-        {{ range $k, $_ := $nixPkgs -}}
+        {{ range $k, $_ := $packagesMap -}}
         pkgs_{{slice $k 0 7}} = import nixpkgs_{{slice $k 0 7}} {
           inherit system;
           config.allowUnfree = true;
@@ -50,6 +55,14 @@
 
         arch = builtins.getAttr (builtins.elemAt (builtins.split "-" system) 0) archMap;
         os = builtins.elemAt (builtins.split "-" system) 2;
+
+        libraries = pkgs.lib.makeLibraryPath [
+          {{- range $k, $v := $librariesMap -}}
+          {{- range $pkg := $v }}
+          pkgs_{{slice $k 0 7}}.{{$pkg}}
+          {{- end }}
+          {{- end }}
+        ];
       in
       {
         devShells.default = pkgs.mkShell {
@@ -57,7 +70,7 @@
 
           buildInputs = {{- if $profileDir}}profile-flake.devShells.${system}.default.buildInputs
             ++ {{- end }} [
-              {{- range $k, $v := $nixPkgs -}}
+              {{- range $k, $v := $packagesMap -}}
               {{- range $pkg := $v }}
               pkgs_{{slice $k 0 7}}.{{$pkg}}
               {{- end }}
@@ -65,7 +78,9 @@
             ];
 
           shellHook = ''
+            export LD_LIBRARY_PATH=${libraries}:$LD_LIBRARY_PATH
             cd {{$projectDir}}
+            {{$shellHook}}
           '';
         };
       }
