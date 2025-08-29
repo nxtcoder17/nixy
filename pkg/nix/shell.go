@@ -48,6 +48,10 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		return err
 	}
 
+	if err := os.WriteFile(filepath.Join(hostFlakeDir, "shell-hook.sh"), []byte(n.ShellHook), 0o744); err != nil {
+		return err
+	}
+
 	if err := t.ExecuteTemplate(f, "project-flake", map[string]any{
 		"nixpkgsCommitList": pp.CommitsList,
 		"packagesMap":       pp.PackagesMap,
@@ -60,7 +64,6 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 			return n.profile.ProfileFlakeDir
 		}(),
 		"nixpkgsDefaultCommit": n.NixPkgs,
-		"shellHook":            n.ShellHook,
 	}); err != nil {
 		return err
 	}

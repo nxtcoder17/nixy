@@ -56,40 +56,53 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 	// Always use interactive mode for now
 	interactiveFlag := "-it"
 
+	addEnv := func(key, value string) string {
+		return fmt.Sprintf("%s=%s", key, value)
+	}
+
+	addMount := func(src, dest string, flags ...string) string {
+		return fmt.Sprintf("%s:%s:%s", src, dest, strings.Join(flags, ","))
+	}
+
 	dockerCmd := []string{
 		"docker", "run",
 		"--hostname", "nixy",
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
-		// Mount profile directory for flakes and workspaces
-		"-v", fmt.Sprintf("%s:%s:z", nix.profile.ProfileFlakeDir, nix.docker.ProfileFlakeDirMountedPath),
-		// Mount Home
-		"-v", fmt.Sprintf("%s:%s:z", nix.profile.FakeHomeDir, nix.docker.FakeHomeMountedPath),
-		// Mount current flake directory
-		"-v", fmt.Sprintf("%s:%s:Z", hostPath, mountedPath),
+		// STEP: profile flake dir
+		"-v", addMount(nix.profile.ProfileFlakeDir, nix.docker.ProfileFlakeDirMountedPath, "z"),
 
-		"-v", fmt.Sprintf("%s:%s:Z", nix.profile.NixDir, nix.docker.NixDirMountedPath),
+		// Mount Home
+		"-v", addMount(nix.profile.FakeHomeDir, nix.docker.FakeHomeMountedPath, "z"),
+
+		// Mount current flake directory
+		"-v", addMount(hostPath, mountedPath, "Z"),
+
+		// STEP: Nix Store
+		"-v", addMount(nix.profile.NixDir, nix.docker.NixDirMountedPath, "z"),
 
 		// STEP: project dir
-		"-v", fmt.Sprintf("%s:%s:Z", cwd, cwd),
+		"-v", addMount(cwd, cwd, "Z"),
 
-		"-e", fmt.Sprintf("HOME=%s", nix.docker.FakeHomeMountedPath),
-		"-e", fmt.Sprintf("USER=%s", ctx.EnvVars["USER"]),
-		"-e", fmt.Sprintf("TERM=%s", ctx.EnvVars["TERM"]),
-		"-e", fmt.Sprintf("TERMINFO=%s", ctx.EnvVars["TERMINFO"]),
-		// mounts terminfo file, so that your cli tools know and behave according to it
-		"-v", fmt.Sprintf("%s:%s:ro,z", ctx.EnvVars["TERMINFO"], ctx.EnvVars["TERMINFO"]),
-		"-e", fmt.Sprintf("XDG_CACHE_HOME=%s", filepath.Join(nix.docker.FakeHomeMountedPath, ".cache")),
-		"-e", fmt.Sprintf("XDG_CONFIG_HOME=%s", filepath.Join(nix.docker.FakeHomeMountedPath, ".config")),
-		"-e", fmt.Sprintf("XDG_DATA_HOME=%s", filepath.Join(nix.docker.FakeHomeMountedPath, ".local", "share")),
+		"-e", addEnv("HOME", nix.docker.FakeHomeMountedPath),
+		"-e", addEnv("USER", ctx.EnvVars["USER"]),
+		"-e", addEnv("TERM", ctx.EnvVars["TERM"]),
+		"-e", addEnv("TERMINFO", ctx.EnvVars["TERMINFO"]),
+
+		// STEP: mounts terminfo file, so that your cli tools know and behave according to it
+		"-v", addMount(ctx.EnvVars["TERMINFO"], ctx.EnvVars["TERMINFO"], "ro", "z"),
+
+		"-e", addEnv("XDG_CACHE_HOME", filepath.Join(nix.docker.FakeHomeMountedPath, ".cache")),
+		"-e", addEnv("XDG_CONFIG_HOME", filepath.Join(nix.docker.FakeHomeMountedPath, ".config")),
+		"-e", addEnv("XDG_DATA_HOME", filepath.Join(nix.docker.FakeHomeMountedPath, ".local", "share")),
 
 		// nix config
-		"-e", fmt.Sprintf("NIX_CONFIG=%s", ctx.EnvVars["NIX_CONFIG"]),
+		"-e", addEnv("NIX_CONFIG", ctx.EnvVars["NIX_CONFIG"]),
 
 		// STEP: nixy env vars
-		"-e", fmt.Sprintf("NIXY_SHELL=%s", ctx.EnvVars["NIXY_SHELL"]),
-		"-e", fmt.Sprintf("NIXY_WORKSPACE_DIR=%s", ctx.EnvVars["NIXY_WORKSPACE_DIR"]),
-		"-e", fmt.Sprintf("NIXY_WORKSPACE_FLAKE_DIR=%s", ctx.EnvVars["NIXY_WORKSPACE_FLAKE_DIR"]),
+		"-e", addEnv("NIXY_SHELL", ctx.EnvVars["NIXY_SHELL"]),
+		"-e", addEnv("NIXY_WORKSPACE_DIR", ctx.EnvVars["NIXY_WORKSPACE_DIR"]),
+		"-e", addEnv("NIXY_WORKSPACE_FLAKE_DIR", ctx.EnvVars["NIXY_WORKSPACE_FLAKE_DIR"]),
 		"--rm", interactiveFlag, "ghcr.io/nxtcoder17/nix:nonroot",
 	}
 
