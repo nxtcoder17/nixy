@@ -5,7 +5,6 @@
 {{- $projectDir := .projectDir }}
 {{- $profileDir := .profileDir }}
 {{- $nixpkgsDefaultCommit := .nixpkgsDefaultCommit }}
-{{- $shellHook := .shellHook }}
 
 {
   description = "nixy project development workspace";
@@ -78,9 +77,13 @@
             ];
 
           shellHook = ''
-            export LD_LIBRARY_PATH=${libraries}:$LD_LIBRARY_PATH
+            if [ -n "${libraries}" ]; then
+              export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
+            fi
+            if [ -e shell-hook.sh ]; then
+              source "shell-hook.sh"
+            fi
             cd {{$projectDir}}
-            {{$shellHook}}
           '';
         };
       }

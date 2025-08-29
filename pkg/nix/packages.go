@@ -2,6 +2,7 @@ package nix
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -48,9 +49,11 @@ func (n *Nix) parsePackages() (*ParsedPackages, error) {
 		return nil, err
 	}
 
-	if err := parse(n.Packages, pp.LibrariesMap); err != nil {
+	if err := parse(n.Libraries, pp.LibrariesMap); err != nil {
 		return nil, err
 	}
+
+	slices.Sort(pp.CommitsList)
 
 	return pp, nil
 }
