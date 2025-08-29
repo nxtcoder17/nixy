@@ -1,6 +1,7 @@
 {{- $nixpkgsList := .nixpkgsCommitList }}
 {{- $packagesMap := .packagesMap }}
 {{- $librariesMap := .librariesMap }}
+{{- $urlPackages := .urlPackages }}
 
 {{- $projectDir := .projectDir }}
 {{- $profileDir := .profileDir }}
@@ -62,6 +63,82 @@
           {{- end }}
           {{- end }}
         ];
+        
+        # Custom URL packages
+        urlPackages = [
+          {{- range $pkg := $urlPackages }}
+          (pkgs.stdenv.mkDerivation rec {
+            name = "{{$pkg.Name}}";
+            pname = "{{$pkg.Name}}";
+            src = pkgs.fetchurl {
+              url = "{{$pkg.URL}}";
+              {{- if $pkg.Sha256 }}
+              sha256 = "{{$pkg.Sha256}}";
+              {{- else }}
+              sha256 = pkgs.lib.fakeSha256;  # Will error and show correct hash
+              {{- end }}
+            };
+            nativeBuildInputs = with pkgs; [
+              unzip p7zip unrar xz gzip bzip2 zstd lzip
+            ];
+            unpackPhase = ''
+              echo ">> Detecting archive type for $src"
+              mime=$(file -b --mime-type "$src")
+              echo ">> Got: $mime"
+
+              try_tar() {
+                if tar tf "$src" >/dev/null 2>&1; then
+                  echo ">> Extracting tar archive"
+                  tar xf "$src"
+                  return 0
+                fi
+                return 1
+              }
+
+              case "$mime" in
+                application/gzip|application/x-gzip|application/x-xz|application/x-bzip2|application/x-zstd)
+                  if ! try_tar; then
+                    echo ">> Not a tarball, using decompressor directly"
+                    case "$mime" in
+                      application/gzip|application/x-gzip) gunzip -k "$src" ;;
+                      application/x-bzip2) bunzip2 -k "$src" ;;
+                      application/x-xz) xz -d -k "$src" ;;
+                      application/x-zstd) unzstd -k "$src" ;;
+                    esac
+                  fi
+                  ;;
+                application/x-tar|application/x-gtar)
+                  tar xf "$src"
+                  ;;
+                application/zip)
+                  unzip "$src"
+                  ;;
+                application/x-7z-compressed)
+                  7z x "$src"
+                  ;;
+                application/x-rar)
+                  unrar x "$src"
+                  ;;
+                application/x-executable)
+                  chmod +x $src
+                  # renaming the script as per the tool name, as it is a one off binary
+                  cp -r "$src" ./$name
+                  ;;
+                *)
+                  echo "!! Unknown archive type: $mime"
+                  echo "Falling back to copying..."
+                  cp -r "$src" .
+                  ;;
+              esac
+            '';
+            installPhase = ''
+              mkdir -p $out/bin
+              find . -type f -executable ! -name "*.so*" -exec cp {} $out/bin/ \;
+            '';
+          })
+
+          {{- end }}
+        ];
       in
       {
         devShells.default = pkgs.mkShell {
@@ -74,7 +151,7 @@
               pkgs_{{slice $k 0 7}}.{{$pkg}}
               {{- end }}
               {{- end }}
-            ];
+            ] ++ urlPackages;
 
           shellHook = ''
             if [ -n "${libraries}" ]; then
