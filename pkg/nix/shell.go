@@ -6,68 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/template"
 )
-
-// getPinnedPackages parses packages and groups them by nixpkgs commit
-func (n *Nix) getPinnedPackages() (nixPkgs []string, packagesMap map[string][]string, librariesMap map[string][]string) {
-	nixPkgsSet := make(map[string]struct{}, len(n.Packages)+len(n.Libraries))
-	packagesMap = make(map[string][]string, len(n.Packages))
-	librariesMap = make(map[string][]string, len(n.Libraries))
-
-	for _, pkg := range n.Packages {
-		// Add default nixpkgs commit if not specified
-		if !strings.HasPrefix(pkg, "nixpkgs/") {
-			pkg = fmt.Sprintf("nixpkgs/%s#%s", n.NixPkgs, pkg)
-		}
-
-		// Parse nixpkgs packages
-		if strings.HasPrefix(pkg, "nixpkgs/") {
-			sp := strings.Split(pkg, "#")
-			if len(sp) != 2 {
-				continue
-			}
-
-			commitHash := sp[0][len("nixpkgs/"):]
-			packageName := sp[1]
-
-			if _, ok := nixPkgsSet[commitHash]; !ok {
-				nixPkgsSet[commitHash] = struct{}{}
-				nixPkgs = append(nixPkgs, commitHash)
-			}
-
-			packagesMap[commitHash] = append(packagesMap[commitHash], packageName)
-		}
-	}
-
-	for _, pkg := range n.Libraries {
-		// Add default nixpkgs commit if not specified
-		if !strings.HasPrefix(pkg, "nixpkgs/") {
-			pkg = fmt.Sprintf("nixpkgs/%s#%s", n.NixPkgs, pkg)
-		}
-
-		// Parse nixpkgs packages
-		if strings.HasPrefix(pkg, "nixpkgs/") {
-			sp := strings.Split(pkg, "#")
-			if len(sp) != 2 {
-				continue
-			}
-
-			commitHash := sp[0][len("nixpkgs/"):]
-			packageName := sp[1]
-
-			if _, ok := nixPkgsSet[commitHash]; !ok {
-				nixPkgsSet[commitHash] = struct{}{}
-				nixPkgs = append(nixPkgs, commitHash)
-			}
-
-			librariesMap[commitHash] = append(librariesMap[commitHash], packageName)
-		}
-	}
-
-	return nixPkgs, packagesMap, librariesMap
-}
 
 type ShellContext struct {
 	context.Context
@@ -97,8 +37,11 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		return fmt.Errorf("failed to crteate flake.nix at path: %s: %w", hostFlakeDir, err)
 	}
 
-	// Parse and organize packages by nixpkgs commit
-	commitsList, packagesMap, librariesMap := n.getPinnedPackages()
+	// Parse and organize packages by always pinning them against a nixpkgs commit
+	pp, err := n.parsePackages()
+	if err != nil {
+		return err
+	}
 
 	workspaceDir, err := os.Getwd()
 	if err != nil {
@@ -106,9 +49,9 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 	}
 
 	if err := t.ExecuteTemplate(f, "project-flake", map[string]any{
-		"nixpkgsCommitList": commitsList,
-		"packagesMap":       packagesMap,
-		"librariesMap":      librariesMap,
+		"nixpkgsCommitList": pp.CommitsList,
+		"packagesMap":       pp.PackagesMap,
+		"librariesMap":      pp.LibrariesMap,
 		"projectDir":        workspaceDir,
 		"profileDir": func() string {
 			if n.executor == BubbleWrapExecutor {
