@@ -56,6 +56,7 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		"nixpkgsCommitList": pp.CommitsList,
 		"packagesMap":       pp.PackagesMap,
 		"librariesMap":      pp.LibrariesMap,
+		"urlPackages":       pp.URLPackages,
 		"projectDir":        workspaceDir,
 		"profileDir": func() string {
 			if n.executor == BubbleWrapExecutor {
