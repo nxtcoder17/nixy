@@ -1,7 +1,6 @@
 package nix
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,12 +16,12 @@ func XDGDataDir() string {
 	return filepath.Join(xdgDataHome, "nixy")
 }
 
-func (nix *Nix) PrepareShellCommand(ctx context.Context, program string) (*exec.Cmd, error) {
+func (nix *Nix) PrepareShellCommand(ctx ShellContext, program string) (*exec.Cmd, error) {
 	switch nix.executor {
 	case LocalExecutor:
 		return nix.localShell(ctx, program)
-	// case DockerExecutor:
-	// 	return nix.prepareDockerCommand(ctx, command, args)
+	case DockerExecutor:
+		return nix.dockerShell(ctx, program)
 	case BubbleWrapExecutor:
 		return nix.bubblewrapShell(ctx, program)
 	default:

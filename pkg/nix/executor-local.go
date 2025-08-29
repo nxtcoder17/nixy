@@ -1,7 +1,6 @@
 package nix
 
 import (
-	"context"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -16,10 +15,10 @@ func isNixInstalled() bool {
 	return true
 }
 
-func (nix *Nix) localShell(ctx context.Context, program string) (*exec.Cmd, error) {
+func (nix *Nix) localShell(ctx ShellContext, program string) (*exec.Cmd, error) {
 	nixBin := "nix"
 
-	hostWorkspacePath, _ := nix.FlakeDir()
+	hostWorkspacePath, _ := nix.WorkspaceFlakeDir()
 
 	var script []string
 
@@ -28,7 +27,7 @@ func (nix *Nix) localShell(ctx context.Context, program string) (*exec.Cmd, erro
 			return nil, fmt.Errorf("failed to download static nix binary: %w", err)
 		}
 		nixBin = nix.profile.StaticNixBinPath
-		script = append(script, fmt.Sprintf("echo PATH=%s:$PATH", filepath.Dir(nix.profile.StaticNixBinPath)))
+		script = append(script, fmt.Sprintf("export PATH=%s:$PATH", filepath.Dir(nix.profile.StaticNixBinPath)))
 	}
 
 	nixShellArgs := []string{
@@ -41,7 +40,7 @@ func (nix *Nix) localShell(ctx context.Context, program string) (*exec.Cmd, erro
 		"-c",
 		strings.Join(append(script,
 			fmt.Sprintf("cd %s", hostWorkspacePath),
-			fmt.Sprintf("nix develop --extra-experimental-features 'nix-command flakes' --override-input profile-flake %s --command %s", nix.profile.ProfileFlakeDir, program),
+			fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.profile.ProfileFlakeDir, program),
 		), "\n"),
 	}
 

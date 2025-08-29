@@ -1,7 +1,6 @@
 package nix
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -46,22 +45,21 @@ func exists(path string) bool {
 	return false
 }
 
-func (nix *Nix) bubblewrapShell(ctx context.Context, program string) (*exec.Cmd, error) {
+func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, error) {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 
 	roBinds := []string{
-		"--ro-bind", "/bin", "/bin",
+		// "--ro-bind", "/bin", "/bin",
 		"--ro-bind", "/etc", "/etc",
-		// "--ro-bind", "/etc/hosts", "/etc/hosts",
-		// "--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
-		"--ro-bind", "/lib", "/lib",
-		"--ro-bind", "/lib64", "/lib64",
-		"--ro-bind", "/run", "/run",
+		// "--ro-bind-try", "/usr/share/terminfo", "/usr/share/terminfo",
+		// "--ro-bind", "/lib", "/lib",
+		// "--ro-bind", "/lib64", "/lib64",
+		// "--ro-bind", "/run", "/run",
 		"--ro-bind", "/usr", "/usr",
-		"--ro-bind", "/var", "/var",
+		// "--ro-bind", "/var", "/var",
 	}
 
 	bwrapArgs := []string{
@@ -91,24 +89,37 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, program string) (*exec.Cmd,
 		"--setenv", "HOME", nix.bubbleWrap.FakeHomeMountedPath,
 		"--setenv", "USER", os.Getenv("USER"),
 		"--setenv", "TERM", os.Getenv("TERM"),
+
+		// mounts terminfo file, so that your cli tools know and behave according to it
+		"--ro-bind", os.Getenv("TERMINFO"), os.Getenv("TERMINFO"),
+		"--setenv", "TERMINFO", os.Getenv("TERMINFO"),
+
 		"--setenv", "XDG_SESSION_TYPE", os.Getenv("XDG_SESSION_TYPE"),
 		"--setenv", "TERM_PROGRAM", os.Getenv("TERM_PROGRAM"),
 		"--setenv", "XDG_CACHE_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".cache"),
 		"--setenv", "XDG_CONFIG_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".config"),
 		"--setenv", "XDG_DATA_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".local", "share"),
+		// nix config
+		"--setenv", "NIX_CONFIG", os.Getenv("NIX_CONFIG"),
+
+		// STEP: nixy env vars
+		"--setenv", "NIXY_SHELL", os.Getenv("NIXY_SHELL"),
+		"--setenv", "NIXY_WORKSPACE_DIR", os.Getenv("NIXY_WORKSPACE_DIR"),
+		"--setenv", "NIXY_WORKSPACE_FLAKE_DIR", os.Getenv("NIXY_WORKSPACE_FLAKE_DIR"),
+
+		// STEP: read-write binds
 		"--bind", nix.profile.ProfileFlakeDir, nix.bubbleWrap.ProfileFlakeDirMountedPath,
 		"--bind", nix.profile.WorkspacesDir, nix.bubbleWrap.WorkspacesDirMountedPath,
 
 		// Nix Store for nixy bubblewrap shell
 		"--bind", nix.profile.NixDir, nix.bubbleWrap.NixDirMountedPath,
 		"--bind", nix.profile.StaticNixBinPath, nix.bubbleWrap.StaticNixBinMountedPath,
-		// "--setenv", "PATH", fmt.Sprintf("/nix/bin:%s", os.Getenv("PATH")),
 
 		// Current Working Directory as it is
 		"--bind", pwd, pwd,
 	}
 
-	_, mountedWorkspacePath := nix.FlakeDir()
+	_, mountedWorkspacePath := nix.WorkspaceFlakeDir()
 
 	if !exists(nix.profile.StaticNixBinPath) {
 		if err := downloadStaticNixBinary(ctx, nix.profile.StaticNixBinPath); err != nil {
@@ -118,8 +129,6 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, program string) (*exec.Cmd,
 
 	nixShell := []string{
 		nix.bubbleWrap.StaticNixBinMountedPath,
-		"--extra-experimental-features",
-		"nix-command flakes",
 		"shell",
 		fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
 		"--command",
@@ -128,8 +137,7 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, program string) (*exec.Cmd,
 		strings.Join([]string{
 			fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(nix.bubbleWrap.StaticNixBinMountedPath)),
 			fmt.Sprintf("cd %s", mountedWorkspacePath),
-			fmt.Sprintf("nix --extra-experimental-features 'nix-command flakes'  develop --override-input profile-flake %s --command %s", nix.bubbleWrap.ProfileFlakeDirMountedPath, program),
-			// fmt.Sprintf("nix --extra-experimental-features 'nix-command flakes' develop --command %s", program),
+			fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.bubbleWrap.ProfileFlakeDirMountedPath, program),
 		}, "\n"),
 	}
 
