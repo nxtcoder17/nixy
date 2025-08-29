@@ -194,7 +194,7 @@ func main() {
 	}()
 
 	if err := cmd.Run(ctx, os.Args); err != nil {
-		slog.Error("while running cmd, got", "err", err)
+		slog.Error(err.Error())
 	}
 }
 
