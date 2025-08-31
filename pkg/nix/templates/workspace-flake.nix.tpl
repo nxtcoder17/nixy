@@ -1,11 +1,10 @@
-{{- $nixpkgsList := .nixpkgsCommitList }}
-{{- $packagesMap := .packagesMap }}
-{{- $librariesMap := .librariesMap }}
-{{- $urlPackages := .urlPackages }}
-
-{{- $projectDir := .projectDir }}
-{{- $profileDir := .profileDir }}
-{{- $nixpkgsDefaultCommit := .nixpkgsDefaultCommit }}
+{{- $nixpkgsList := .NixPkgsCommits }}
+{{- $packagesMap := .PackagesMap }}
+{{- $librariesMap := .LibrariesMap }}
+{{- $urlPackages := .URLPackages }}
+{{- $projectDir := .WorkspaceDir }}
+{{- $profileDir := .ProfileFlakeDir }}
+{{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 
 {
   description = "nixy project development workspace";
@@ -41,7 +40,7 @@
           config.allowUnfree = true;
         };
 
-        {{ range $k, $_ := $packagesMap -}}
+        {{- range $k := $nixpkgsList -}}
         pkgs_{{slice $k 0 7}} = import nixpkgs_{{slice $k 0 7}} {
           inherit system;
           config.allowUnfree = true;
@@ -56,10 +55,18 @@
         arch = builtins.getAttr (builtins.elemAt (builtins.split "-" system) 0) archMap;
         os = builtins.elemAt (builtins.split "-" system) 2;
 
+        packages = [
+          {{- range $k := $nixpkgsList -}}
+          {{- range $_, $v := (index $packagesMap $k) }}
+          pkgs_{{slice $k 0 7}}.{{$v}}
+          {{- end }}
+          {{- end }}
+        ];
+
         libraries = pkgs.lib.makeLibraryPath [
-          {{- range $k, $v := $librariesMap -}}
-          {{- range $pkg := $v }}
-          pkgs_{{slice $k 0 7}}.{{$pkg}}
+          {{- range $k := $nixpkgsList -}}
+          {{- range $_, $v := (index $librariesMap $k) }}
+          pkgs_{{slice $k 0 7}}.{{$v}}
           {{- end }}
           {{- end }}
         ];
@@ -120,9 +127,9 @@
                   unrar x "$src"
                   ;;
                 application/x-executable)
-                  chmod +x $src
-                  # renaming the script as per the tool name, as it is a one off binary
-                  cp -r "$src" ./$name
+                  # INFO: renaming the script as per the tool name, as it is a one off binary
+                  cp "$src" ./$name
+                  chmod +x $name
                   ;;
                 *)
                   echo "!! Unknown archive type: $mime"
@@ -144,14 +151,12 @@
         devShells.default = pkgs.mkShell {
           # hardeningDisable = [ "all" ];
 
-          buildInputs = {{- if $profileDir}}profile-flake.devShells.${system}.default.buildInputs
-            ++ {{- end }} [
-              {{- range $k, $v := $packagesMap -}}
-              {{- range $pkg := $v }}
-              pkgs_{{slice $k 0 7}}.{{$pkg}}
-              {{- end }}
-              {{- end }}
-            ] ++ urlPackages;
+          buildInputs = 
+            {{- if $profileDir}} 
+            profile-flake.devShells.${system}.default.buildInputs ++ 
+            {{- end }}
+            packages ++
+            urlPackages;
 
           shellHook = ''
             if [ -n "${libraries}" ]; then

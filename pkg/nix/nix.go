@@ -25,14 +25,6 @@ type Context struct {
 	Profile  string
 }
 
-// URLPackage represents a custom package to be fetched from a URL
-type URLPackage struct {
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	Sha256 string `json:"sha256,omitempty"`
-	Type   string `json:"type,omitempty"` // "binary" or "archive", auto-detected if empty
-}
-
 type Nix struct {
 	ConfigFile *string `json:"-"`
 
@@ -45,10 +37,12 @@ type Nix struct {
 	bubbleWrap *BubbleWrap `json:"-"`
 	docker     *Docker     `json:"-"`
 
-	NixPkgs       string              `json:"nixpkgs"`
-	InputPackages []any               `json:"packages"` // Can be string or PackageConfig
-	Packages      []NormalizedPackage `json:"-"`
-	Libraries     []string            `json:"libraries,omitempty"`
+	cwd string `json:"-"`
+
+	NixPkgs       string               `json:"nixpkgs"`
+	InputPackages []any                `json:"packages"` // Can be string or PackageConfig
+	Packages      []*NormalizedPackage `json:"-"`
+	Libraries     []string             `json:"libraries,omitempty"`
 
 	ShellHook string `json:"shellHook,omitempty"`
 }
@@ -73,9 +67,14 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		return nil, err
 	}
 
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read current working directory: %w", err)
+	}
+
 	profile, err := NewProfile(ctx, GetCurrentNixyProfile())
 
-	nix := Nix{profile: profile, executor: GetCurrentNixyExecutor(), Logger: slog.Default()}
+	nix := Nix{profile: profile, executor: GetCurrentNixyExecutor(), Logger: slog.Default(), cwd: dir}
 	if nix.executor == BubbleWrapExecutor {
 		bwrap, err := UseBubbleWrap(profile)
 		if err != nil {
@@ -104,23 +103,39 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		return nil, fmt.Errorf("failed to create dir %s: %s", hostPath, err)
 	}
 
-	np, err := nix.parseAndUpdatePackageList()
-	if err != nil {
-		return nil, err
+	nix.Packages = make([]*NormalizedPackage, 0, len(nix.InputPackages))
+
+	hasPkgUpdate := false
+	for _, pkg := range nix.InputPackages {
+		np, err := nix.parsePackage(pkg)
+		if err != nil {
+			return nil, err
+		}
+
+		// Fetch SHA256 if not provided
+		if np.IsURLPackage && np.URLConfig.Sha256 == "" {
+			hash, err := fetchURLHash(np.URLConfig.URL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch SHA256 hash for (name: %s, url: %s): %w", np.URLConfig.Name, np.URLConfig.URL, err)
+			}
+			hasPkgUpdate = true
+			np.URLConfig.Sha256 = hash
+		}
+
+		nix.Packages = append(nix.Packages, np)
 	}
 
-	nix.Packages = np
+	if hasPkgUpdate {
+		if err := nix.SyncToDisk(); err != nil {
+			return nil, err
+		}
+	}
 
 	return &nix, nil
 }
 
 func (n *Nix) WorkspaceFlakeDir() (host, mounted string) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		panic(fmt.Errorf("FAILED to read current working directory: %w", err))
-	}
-
-	cwdHash := fmt.Sprintf("%x-%s", md5.Sum([]byte(cwd)), filepath.Base(cwd))
+	cwdHash := fmt.Sprintf("%x-%s", md5.Sum([]byte(n.cwd)), filepath.Base(n.cwd))
 
 	hostPath := filepath.Join(n.profile.WorkspacesDir, cwdHash)
 
@@ -149,7 +164,7 @@ func (n *Nix) SyncToDisk() error {
 	upkg := make([]any, 0, len(n.InputPackages))
 	set := make(map[string]struct{}, len(n.InputPackages))
 
-	for _, pkg := range n.InputPackages {
+	for i, pkg := range n.InputPackages {
 		var key string
 		switch v := pkg.(type) {
 		case string:
@@ -159,9 +174,7 @@ func (n *Nix) SyncToDisk() error {
 			if name, ok := v["name"].(string); ok {
 				key = name
 			}
-		case URLPackage:
-			// For URL packages, use name as key
-			key = v.Name
+			v["sha256"] = n.Packages[i].URLConfig.Sha256
 		default:
 			fmt.Printf("go type: %T", v)
 		}
