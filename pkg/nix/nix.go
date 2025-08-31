@@ -26,24 +26,24 @@ type Context struct {
 }
 
 type Nix struct {
-	ConfigFile *string `json:"-"`
+	ConfigFile *string `yaml:"-"`
 
-	executor Executor `json:"-"`
+	executor Executor `yaml:"-"`
 
-	sync.Mutex `json:"-"`
-	Logger     *slog.Logger `json:"-"`
+	sync.Mutex `yaml:"-"`
+	Logger     *slog.Logger `yaml:"-"`
 
-	profile    *Profile    `json:"-"`
-	bubbleWrap *BubbleWrap `json:"-"`
-	docker     *Docker     `json:"-"`
+	profile    *Profile    `yaml:"-"`
+	bubbleWrap *BubbleWrap `yaml:"-"`
+	docker     *Docker     `yaml:"-"`
 
-	cwd string `json:"-"`
+	cwd string `yaml:"-"`
 
-	NixPkgs   string               `json:"nixpkgs"`
-	Packages  []*NormalizedPackage `json:"packages"`
-	Libraries []string             `json:"libraries,omitempty"`
+	NixPkgs   string               `yaml:"nixpkgs"`
+	Packages  []*NormalizedPackage `yaml:"packages"`
+	Libraries []string             `yaml:"libraries,omitempty"`
 
-	ShellHook string `json:"shellHook,omitempty"`
+	ShellHook string `yaml:"shellHook,omitempty"`
 }
 
 func GetCurrentNixyProfile() string {
