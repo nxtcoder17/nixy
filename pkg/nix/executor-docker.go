@@ -14,7 +14,7 @@ type Docker struct {
 	ProfileFlakeDirMountedPath string
 	FakeHomeMountedPath        string
 	NixDirMountedPath          string
-	WorkspacesDirMountedPath   string
+	WorkspaceDirMountedPath    string
 	StaticNixBinMountedPath    string
 }
 
@@ -25,7 +25,7 @@ func UseDocker(profile *Profile) (*Docker, error) {
 		ProfileFlakeDirMountedPath: "/profile",
 		FakeHomeMountedPath:        "/home/nixy",
 		NixDirMountedPath:          "/nix",
-		WorkspacesDirMountedPath:   "/home/nixy/workspaces",
+		WorkspaceDirMountedPath:    "/workspace",
 		StaticNixBinMountedPath:    "/nix/bin/nix",
 	}
 
@@ -38,7 +38,7 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 		return nil, err
 	}
 
-	hostPath, mountedPath := nix.WorkspaceFlakeDir()
+	wsFlakeHostPath, wsFlakeMountedPath := nix.WorkspaceFlakeDir()
 
 	nixShell := []string{
 		"nix",
@@ -48,7 +48,7 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 		"bash",
 		"-c",
 		strings.Join([]string{
-			fmt.Sprintf("cd %s", mountedPath),
+			fmt.Sprintf("cd %s", wsFlakeMountedPath),
 			fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.docker.ProfileFlakeDirMountedPath, program),
 		}, "\n"),
 	}
@@ -67,6 +67,7 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 	dockerCmd := []string{
 		"docker", "run",
 		"--hostname", "nixy",
+		// "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
 		// STEP: profile flake dir
@@ -76,7 +77,7 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 		"-v", addMount(nix.profile.FakeHomeDir, nix.docker.FakeHomeMountedPath, "z"),
 
 		// Mount current flake directory
-		"-v", addMount(hostPath, mountedPath, "Z"),
+		"-v", addMount(wsFlakeHostPath, wsFlakeMountedPath, "Z"),
 
 		// STEP: Nix Store
 		"-v", addMount(nix.profile.NixDir, nix.docker.NixDirMountedPath, "z"),

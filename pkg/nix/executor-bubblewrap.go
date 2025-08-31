@@ -27,7 +27,7 @@ func UseBubbleWrap(profile *Profile) (*BubbleWrap, error) {
 		ProfileFlakeDirMountedPath: "/profile",
 		FakeHomeMountedPath:        "/home/nixy",
 		NixDirMountedPath:          "/nix",
-		WorkspacesDirMountedPath:   "/home/nixy/workspaces",
+		WorkspacesDirMountedPath:   "/workspace",
 		StaticNixBinMountedPath:    "/nix/bin/nix",
 	}
 
@@ -61,6 +61,8 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, er
 		"--ro-bind", "/usr", "/usr",
 		// "--ro-bind", "/var", "/var",
 	}
+
+	hostPath, mountedPath := nix.WorkspaceFlakeDir()
 
 	bwrapArgs := []string{
 		// no-zombie processes
@@ -108,8 +110,9 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, er
 		"--setenv", "NIXY_WORKSPACE_FLAKE_DIR", os.Getenv("NIXY_WORKSPACE_FLAKE_DIR"),
 
 		// STEP: read-write binds
-		"--bind", nix.profile.ProfileFlakeDir, nix.bubbleWrap.ProfileFlakeDirMountedPath,
-		"--bind", nix.profile.WorkspacesDir, nix.bubbleWrap.WorkspacesDirMountedPath,
+		"--ro-bind", nix.profile.ProfileFlakeDir, nix.bubbleWrap.ProfileFlakeDirMountedPath,
+		"--tmpfs", nix.bubbleWrap.WorkspacesDirMountedPath,
+		"--ro-bind", hostPath, mountedPath,
 
 		// Nix Store for nixy bubblewrap shell
 		"--bind", nix.profile.NixDir, nix.bubbleWrap.NixDirMountedPath,
