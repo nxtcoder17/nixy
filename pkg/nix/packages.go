@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"slices"
@@ -176,8 +175,6 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 	slices.SortFunc(result.URLPackages, func(a, b URLPackage) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-
-	slog.Info("NixPkgs", "commits", result.NixPkgsCommits)
 
 	return &result, nil
 }
