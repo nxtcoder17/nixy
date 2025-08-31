@@ -43,7 +43,7 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 	}
 
 	if err := os.WriteFile(filepath.Join(hostFlakeDir, "flake.nix"), flake, 0o644); err != nil {
-		return fmt.Errorf("failed to crteate flake.nix at path: %s: %w", hostFlakeDir, err)
+		return fmt.Errorf("failed to create flake.nix at path: %s: %w", hostFlakeDir, err)
 	}
 
 	envVars := map[string]string{
