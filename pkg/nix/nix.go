@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"sigs.k8s.io/yaml"
+	"gopkg.in/yaml.v3"
 )
 
 type Executor string
@@ -39,10 +39,9 @@ type Nix struct {
 
 	cwd string `json:"-"`
 
-	NixPkgs       string               `json:"nixpkgs"`
-	InputPackages []any                `json:"packages"` // Can be string or PackageConfig
-	Packages      []*NormalizedPackage `json:"-"`
-	Libraries     []string             `json:"libraries,omitempty"`
+	NixPkgs   string               `json:"nixpkgs"`
+	Packages  []*NormalizedPackage `json:"packages"`
+	Libraries []string             `json:"libraries,omitempty"`
 
 	ShellHook string `json:"shellHook,omitempty"`
 }
@@ -103,26 +102,26 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		return nil, fmt.Errorf("failed to create dir %s: %s", hostPath, err)
 	}
 
-	nix.Packages = make([]*NormalizedPackage, 0, len(nix.InputPackages))
+	// nix.Packages = make([]*NormalizedPackage, 0, len(nix.InputPackages))
 
 	hasPkgUpdate := false
-	for _, pkg := range nix.InputPackages {
-		np, err := parsePackage(pkg)
-		if err != nil {
-			return nil, err
-		}
+	for _, pkg := range nix.Packages {
+		// np, err := parsePackage(pkg)
+		// if err != nil {
+		// 	return nil, err
+		// }
 
 		// Fetch SHA256 if not provided
-		if np.IsURLPackage && np.URLConfig.Sha256 == "" {
-			hash, err := fetchURLHash(np.URLConfig.URL)
+		if pkg.URLPackage != nil && pkg.URLPackage.Sha256 == "" {
+			hash, err := fetchURLHash(pkg.URLPackage.URL)
 			if err != nil {
-				return nil, fmt.Errorf("failed to fetch SHA256 hash for (name: %s, url: %s): %w", np.URLConfig.Name, np.URLConfig.URL, err)
+				return nil, fmt.Errorf("failed to fetch SHA256 hash for (name: %s, url: %s): %w", pkg.URLPackage.Name, pkg.URLPackage.URL, err)
 			}
 			hasPkgUpdate = true
-			np.URLConfig.Sha256 = hash
+			pkg.URLPackage.Sha256 = hash
 		}
 
-		nix.Packages = append(nix.Packages, np)
+		nix.Packages = append(nix.Packages, pkg)
 	}
 
 	if hasPkgUpdate {
@@ -162,26 +161,18 @@ func (n *Nix) SyncToDisk() error {
 	defer n.Unlock()
 
 	// Deduplicate packages while preserving any type
-	upkg := make([]any, 0, len(n.InputPackages))
-	set := make(map[string]struct{}, len(n.InputPackages))
+	upkg := make([]*NormalizedPackage, 0, len(n.Packages))
+	set := make(map[string]struct{}, len(n.Packages))
 
-	for i, pkg := range n.InputPackages {
+	for _, pkg := range n.Packages {
 		var key string
-		switch v := pkg.(type) {
-		case string:
-			key = v
-		case map[string]any:
-			// For URL packages, use name as key
-			if name, ok := v["name"].(string); ok {
-				key = name
-			}
-			v["sha256"] = n.Packages[i].URLConfig.Sha256
-		default:
-			fmt.Printf("go type: %T", v)
+
+		if pkg.NixPackage != nil {
+			key = pkg.NixPackage.Name
 		}
 
-		if key == "" {
-			return fmt.Errorf("[SHOULD NEVER HAPPEN] failed to decide key for keeping packages unique")
+		if pkg.URLPackage != nil {
+			key = pkg.URLPackage.Name
 		}
 
 		if _, ok := set[key]; ok {
@@ -191,7 +182,7 @@ func (n *Nix) SyncToDisk() error {
 		upkg = append(upkg, pkg)
 	}
 
-	n.InputPackages = upkg
+	n.Packages = upkg
 
 	b, err := yaml.Marshal(n)
 	if err != nil {

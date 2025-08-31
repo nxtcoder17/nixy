@@ -3,7 +3,6 @@ package nix
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type NixPackage struct {
@@ -26,48 +27,77 @@ type URLPackage struct {
 }
 
 type NormalizedPackage struct {
-	// For nixpkgs packages
-	IsNixPackage bool
-	NixPackage   *NixPackage
-
-	// For URL packages
-	IsURLPackage bool
-	URLConfig    *URLPackage
+	*NixPackage
+	*URLPackage
 }
 
-func parsePackage(pkg any) (*NormalizedPackage, error) {
-	switch v := pkg.(type) {
-
-	// Simple string package from nixpkgs
-	case string:
-		if !strings.HasPrefix(v, "nixpkgs/") {
-			return &NormalizedPackage{IsNixPackage: true, NixPackage: &NixPackage{Name: v, Commit: ""}}, nil
-		}
-		// Parse nixpkgs/COMMIT#package format
-		parts := strings.Split(v, "#")
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid package format: %s", v)
-		}
-
-		return &NormalizedPackage{IsNixPackage: true, NixPackage: &NixPackage{
-			Name: parts[1], Commit: strings.TrimPrefix(parts[0], "nixpkgs/"),
-		}}, nil
-
-	case map[string]any:
-		jsonBytes, err := json.Marshal(v)
+func (p *NormalizedPackage) UnmarshalYAML(value *yaml.Node) error {
+	// try string form
+	var s string
+	if err := value.Decode(&s); err == nil {
+		np, err := parseNixPackage(s)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse package config: %w", err)
+			return err
 		}
-
-		var urlpkg URLPackage
-		if err := json.Unmarshal(jsonBytes, &urlpkg); err != nil {
-			return nil, fmt.Errorf("invalid package config: %w", err)
-		}
-
-		return &NormalizedPackage{IsURLPackage: true, URLConfig: &urlpkg}, nil
-	default:
-		return nil, fmt.Errorf("invalid package type (%T): must be string or object", v)
+		*p = *np
+		return nil
 	}
+
+	// else try object form
+	var urlpkg URLPackage
+	if err := value.Decode(&urlpkg); err != nil {
+		return err
+	}
+
+	if urlpkg.Name == "" {
+		return fmt.Errorf("invalid URL package, must specify the name")
+	}
+
+	if urlpkg.URL == "" {
+		return fmt.Errorf("invalid URL package, must specify the URL")
+	}
+
+	*p = NormalizedPackage{
+		URLPackage: &urlpkg,
+	}
+	return nil
+}
+
+func (p *NormalizedPackage) MarshalYAML() (any, error) {
+	if p.NixPackage != nil {
+		if p.NixPackage.Commit == "" {
+			return p.NixPackage.Name, nil
+		}
+
+		return fmt.Sprintf("nixpkgs/%s#%s", p.NixPackage.Commit, p.NixPackage.Name), nil
+	}
+
+	// if only Name, emit as string
+	if p.URLPackage != nil {
+		return map[string]string{
+			"name":   p.URLPackage.Name,
+			"url":    p.URLPackage.URL,
+			"sha256": p.URLPackage.Sha256,
+		}, nil
+	}
+
+	return p, nil
+}
+
+func parseNixPackage(pkg string) (*NormalizedPackage, error) {
+	if !strings.HasPrefix(pkg, "nixpkgs/") {
+		return &NormalizedPackage{NixPackage: &NixPackage{Name: pkg, Commit: ""}}, nil
+	}
+	// Parse nixpkgs/COMMIT#package format
+	parts := strings.Split(pkg, "#")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid package format: %s", pkg)
+	}
+
+	return &NormalizedPackage{NixPackage: &NixPackage{
+		Name:   parts[1],
+		Commit: strings.TrimPrefix(parts[0], "nixpkgs/"),
+	}}, nil
 }
 
 func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
@@ -89,7 +119,7 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 	}
 
 	for _, pkg := range n.Packages {
-		if pkg.IsNixPackage {
+		if pkg.NixPackage != nil {
 			nixpkg := pkg.NixPackage
 
 			if nixpkg.Commit == "" {
@@ -104,18 +134,18 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 			result.PackagesMap[nixpkg.Commit] = append(result.PackagesMap[nixpkg.Commit], nixpkg.Name)
 		}
 
-		if pkg.IsURLPackage {
-			result.URLPackages = append(result.URLPackages, *pkg.URLConfig)
+		if pkg.URLPackage != nil {
+			result.URLPackages = append(result.URLPackages, *pkg.URLPackage)
 		}
 	}
 
 	for _, pkg := range n.Libraries {
-		np, err := parsePackage(pkg)
+		np, err := parseNixPackage(pkg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse library (%s): %w", pkg, err)
 		}
 
-		if !np.IsNixPackage {
+		if np.NixPackage == nil {
 			return nil, fmt.Errorf("library (%s) must be a nix package", pkg)
 		}
 

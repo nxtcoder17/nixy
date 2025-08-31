@@ -17,8 +17,10 @@ func Test_parsePackage(t *testing.T) {
 			pkg:  "go",
 			want: &NormalizedPackage{
 				IsNixPackage: true,
-				Name:         "go",
-				Commit:       "",
+				NixPackage: &NixPackage{
+					Name:   "go",
+					Commit: "",
+				},
 			},
 			wantErr: false,
 		},
@@ -27,8 +29,10 @@ func Test_parsePackage(t *testing.T) {
 			pkg:  "nixpkgs/41d292bfc37309790f70f4c120b79280ce40af16#go",
 			want: &NormalizedPackage{
 				IsNixPackage: true,
-				Name:         "go",
-				Commit:       "41d292bfc37309790f70f4c120b79280ce40af16",
+				NixPackage: &NixPackage{
+					Name:   "go",
+					Commit: "41d292bfc37309790f70f4c120b79280ce40af16",
+				},
 			},
 			wantErr: false,
 		},
@@ -38,12 +42,67 @@ func Test_parsePackage(t *testing.T) {
 			want:    nil,
 			wantErr: true,
 		},
+
+		{
+			name: "[VALID] url package",
+			pkg: map[string]any{
+				"name": "sample",
+				"url":  "https://sample.go/download",
+			},
+			want: &NormalizedPackage{
+				IsURLPackage: true,
+				URLPackage: &URLPackage{
+					Name:   "sample",
+					URL:    "https://sample.go/download",
+					Sha256: "",
+				},
+			},
+			wantErr: false,
+		},
+
+		{
+			name: "[VALID] url package with SHA256",
+			pkg: map[string]any{
+				"name":   "sample",
+				"url":    "https://sample.go/download",
+				"sha256": "SAMPLE-SHA",
+			},
+			want: &NormalizedPackage{
+				IsURLPackage: true,
+				URLPackage: &URLPackage{
+					Name:   "sample",
+					URL:    "https://sample.go/download",
+					Sha256: "SAMPLE-SHA",
+				},
+			},
+			wantErr: false,
+		},
+
+		{
+			name: "[INVALID] url package without a name",
+			pkg: map[string]any{
+				"name":   "",
+				"url":    "https://sample.go/download",
+				"sha256": "SAMPLE-SHA",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "[INVALID] url package without a url",
+			pkg: map[string]any{
+				"name": "sample",
+				"url":  "",
+			},
+			want:    nil,
+			wantErr: true,
+		},
 	}
 
 	for i := range tests {
 		tt := tests[i]
 		t.Run(tt.name, func(t *testing.T) {
-			np, err := parsePackage(tt.pkg)
+			np, err := parseNixPackage(tt.pkg)
 			if tt.wantErr && err == nil {
 				t.Errorf("wanted error, but got no error")
 			}
