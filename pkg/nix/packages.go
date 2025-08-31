@@ -20,9 +20,9 @@ type NixPackage struct {
 }
 
 type URLPackage struct {
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	Sha256 string `json:"sha256,omitempty"`
+	Name   string `yaml:"name"`
+	URL    string `yaml:"url"`
+	Sha256 string `yaml:"sha256,omitempty"`
 }
 
 type NormalizedPackage struct {
