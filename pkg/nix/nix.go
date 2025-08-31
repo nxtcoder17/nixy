@@ -107,7 +107,7 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 
 	hasPkgUpdate := false
 	for _, pkg := range nix.InputPackages {
-		np, err := nix.parsePackage(pkg)
+		np, err := parsePackage(pkg)
 		if err != nil {
 			return nil, err
 		}
@@ -141,9 +141,10 @@ func (n *Nix) WorkspaceFlakeDir() (host, mounted string) {
 
 	switch n.executor {
 	case BubbleWrapExecutor:
-		return hostPath, filepath.Join(n.bubbleWrap.WorkspacesDirMountedPath, cwdHash)
+		// return hostPath, filepath.Join(n.bubbleWrap.WorkspacesDirMountedPath, cwdHash)
+		return hostPath, n.bubbleWrap.WorkspacesDirMountedPath
 	case DockerExecutor:
-		return hostPath, filepath.Join(n.docker.WorkspacesDirMountedPath, cwdHash)
+		return hostPath, filepath.Join(n.docker.WorkspaceDirMountedPath)
 	}
 
 	return hostPath, hostPath
