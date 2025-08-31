@@ -1,4 +1,4 @@
-{{- $nixpkgsCommit := .nixpkgsCommit }}
+{{- $nixpkgsCommit := .NixPkgsCommit }}
 {
   description = "nixy profile flake";
 

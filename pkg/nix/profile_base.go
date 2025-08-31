@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"text/template"
+
+	"github.com/nxtcoder17/nixy/pkg/nix/templates"
 )
 
 // Profile represents a general profile that all executors can use
@@ -70,22 +71,14 @@ func NewProfile(ctx context.Context, name string) (*Profile, error) {
 		return nil, fmt.Errorf("failed to save profile into a profile.json: %w", err)
 	}
 
-	// Create profile flake
-	f, err := os.Create(filepath.Join(p.ProfileFlakeDir, "flake.nix"))
+	b, err := templates.RenderProfileFlake(ProfileFlakeParams{NixPkgsCommit: nixpkgsHash})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create profile flake.nix: %w", err)
+		return nil, err
 	}
 
-	t := template.New("profile-flake")
-	if _, err := t.Parse(templateProfileFlake); err != nil {
-		return nil, fmt.Errorf("failed to parse profile flake template: %w", err)
+	if err := os.WriteFile(filepath.Join(p.ProfileFlakeDir, "flake.nix"), b, 0o644); err != nil {
+		return nil, fmt.Errorf("failed to create profile flake.nix: %w", err)
 	}
-	if err := t.ExecuteTemplate(f, "profile-flake", map[string]any{
-		"nixpkgsCommit": p.NixPkgsCommitHash,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to execute profile flake.nix template: %w", err)
-	}
-	f.Close()
 
 	return &p, nil
 }
