@@ -52,13 +52,15 @@ func NewProfile(ctx context.Context, name string) (*Profile, error) {
 
 	nixDir := filepath.Join(profilePath, "nix")
 
+	fakeHomeDir := filepath.Join(profilePath, "fake-home")
+
 	p := Profile{
 		Name:              name,
 		ProfilePath:       profilePath,
 		NixPkgsCommitHash: nixpkgsHash,
-		ProfileFlakeDir:   filepath.Join(profilePath, "profile-flake"),
+		ProfileFlakeDir:   filepath.Join(profilePath, "flake"),
 		WorkspacesDir:     filepath.Join(profilePath, "workspaces"),
-		FakeHomeDir:       filepath.Join(profilePath, "fake-home"),
+		FakeHomeDir:       fakeHomeDir,
 		NixDir:            nixDir,
 		StaticNixBinPath:  filepath.Join(nixDir, "bin", "nix"),
 	}

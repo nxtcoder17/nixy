@@ -35,13 +35,13 @@ type NormalizedPackage struct {
 	URLConfig    *URLPackage
 }
 
-func (n *Nix) parsePackage(pkg any) (*NormalizedPackage, error) {
+func parsePackage(pkg any) (*NormalizedPackage, error) {
 	switch v := pkg.(type) {
 
 	// Simple string package from nixpkgs
 	case string:
 		if !strings.HasPrefix(v, "nixpkgs/") {
-			return &NormalizedPackage{IsNixPackage: true, NixPackage: &NixPackage{Name: v, Commit: n.NixPkgs}}, nil
+			return &NormalizedPackage{IsNixPackage: true, NixPackage: &NixPackage{Name: v, Commit: ""}}, nil
 		}
 		// Parse nixpkgs/COMMIT#package format
 		parts := strings.Split(v, "#")
@@ -91,6 +91,11 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 	for _, pkg := range n.Packages {
 		if pkg.IsNixPackage {
 			nixpkg := pkg.NixPackage
+
+			if nixpkg.Commit == "" {
+				nixpkg.Commit = n.NixPkgs
+			}
+
 			if _, ok := cache[nixpkg.Commit]; !ok {
 				cache[nixpkg.Commit] = struct{}{}
 				result.NixPkgsCommits = append(result.NixPkgsCommits, nixpkg.Commit)
@@ -105,7 +110,7 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 	}
 
 	for _, pkg := range n.Libraries {
-		np, err := n.parsePackage(pkg)
+		np, err := parsePackage(pkg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse library (%s): %w", pkg, err)
 		}
@@ -115,6 +120,10 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 		}
 
 		nixpkg := np.NixPackage
+
+		if nixpkg.Commit == "" {
+			nixpkg.Commit = n.NixPkgs
+		}
 
 		if _, ok := cache[nixpkg.Commit]; !ok {
 			cache[nixpkg.Commit] = struct{}{}
