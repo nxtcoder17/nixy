@@ -11,22 +11,7 @@ import (
 	"github.com/nxtcoder17/nixy/pkg/nix/templates"
 )
 
-type ShellContext struct {
-	context.Context
-	EnvVars map[string]string
-}
-
-func (n *Nix) Shell(ctx context.Context, shell string) error {
-	if shell == "" {
-		if v, ok := os.LookupEnv("SHELL"); ok {
-			shell = v
-		} else {
-			shell = "bash"
-		}
-	}
-
-	shell = filepath.Base(shell)
-
+func (n *Nix) Build(ctx context.Context, target string) error {
 	if err := os.WriteFile(filepath.Join(n.executorArgs.WorkspaceDirHostPath, "shell-hook.sh"), []byte(n.ShellHook), 0o744); err != nil {
 		return err
 	}
@@ -61,13 +46,26 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		script = append(script, fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(n.executorArgs.NixBinaryMountedPath)))
 	}
 
+	build, ok := n.Builds[target]
+	if !ok {
+		return fmt.Errorf("build target (%s) does not exist", target)
+	}
+
+	script = append(script, fmt.Sprintf("cd %s", n.executorArgs.WorkspaceDirMountedPath))
+
+	for _, path := range build.Paths {
+		script = append(script, fmt.Sprintf("mkdir -p $(dirname %s) && cp -r %s/%s ./$(dirname %s)", path, n.executorArgs.PWD, path, path))
+	}
+
 	script = append(script,
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceDirMountedPath),
-		fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", n.executorArgs.ProfileFlakeDirMountedPath, shell),
+		// "cat flake.nix",
+		fmt.Sprintf("nix build .#%s", target),
 	)
 
 	nixShell := []string{
 		"shell",
+		fmt.Sprintf("nixpkgs/%s#busybox", n.NixPkgs),
 		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs),
 		"--command",
 		"bash",

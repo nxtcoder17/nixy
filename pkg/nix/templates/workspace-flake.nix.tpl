@@ -5,6 +5,7 @@
 {{- $projectDir := .WorkspaceDir }}
 {{- $profileDir := .ProfileFlakeDir }}
 {{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
+{{- $builds := .Builds -}}
 
 {
   description = "nixy project development workspace";
@@ -168,6 +169,46 @@
             cd {{$projectDir}}
           '';
         };
+
+        {{- range $name, $build := $builds }}
+        packages.{{$name}} = let
+            closure = pkgs.buildEnv {
+              name = "env";
+              paths = [
+                {{- range $k := $nixpkgsList -}}
+                {{- range $_, $v := (index $build.PackagesMap $k) }}
+                pkgs_{{slice $k 0 7}}.{{$v}}
+                {{- end }}
+                {{- end }}
+              ];
+            };
+          in pkgs.stdenv.mkDerivation {
+            name = "{{$name}}";
+            nativeBuildInputs = with pkgs; [
+              uutils-coreutils-noprefix
+            ];
+            src = [
+              closure
+
+              {{- range $v := $build.Paths }}
+              {{- /* {{ if not (hasPrefix "$v" "./") -}} */}}
+              {{- /* ./ */}}
+              {{- /* {{- end }} */}}
+              {{$v}}
+              {{- end }}
+            ];
+            unpackPhase = ":";
+            fixupPhase = ":";
+            installPhase = ''
+              echo "SRC is: $src"
+              echo "OUT is: $out"
+              mkdir -p $out
+              echo cp -r $src $out
+              cp -r $src $out
+            '';
+          };
+
+        {{- end }}
       }
     );
 }

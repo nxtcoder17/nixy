@@ -1,6 +1,7 @@
 package nix
 
 import (
+	"crypto/md5"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,50 +9,47 @@ import (
 	"strings"
 )
 
-type Docker struct {
-	profile *Profile
+func UseDocker(profile *Profile) (*ExecutorArgs, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
 
-	ProfileFlakeDirMountedPath string
-	FakeHomeMountedPath        string
-	NixDirMountedPath          string
-	WorkspaceDirMountedPath    string
-	StaticNixBinMountedPath    string
-}
+	cwdHash := fmt.Sprintf("%x-%s", md5.Sum([]byte(dir)), filepath.Base(dir))
 
-func UseDocker(profile *Profile) (*Docker, error) {
-	dockerCfg := Docker{
-		profile: profile,
-
+	dockerCfg := ExecutorArgs{
+		PWD:                        dir,
+		NixBinaryMountedPath:       "nix",
 		ProfileFlakeDirMountedPath: "/profile",
 		FakeHomeMountedPath:        "/home/nixy",
 		NixDirMountedPath:          "/nix",
 		WorkspaceDirMountedPath:    "/workspace",
-		StaticNixBinMountedPath:    "/nix/bin/nix",
+		WorkspaceDirHostPath:       filepath.Join(profile.WorkspacesDir, cwdHash),
 	}
 
 	return &dockerCfg, nil
 }
 
-func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error) {
+func (nix *Nix) dockerShell(ctx ShellContext) (func(cmd string, args ...string) *exec.Cmd, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 
-	wsFlakeHostPath, wsFlakeMountedPath := nix.WorkspaceFlakeDir()
-
-	nixShell := []string{
-		"nix",
-		"shell",
-		fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
-		"--command",
-		"bash",
-		"-c",
-		strings.Join([]string{
-			fmt.Sprintf("cd %s", wsFlakeMountedPath),
-			fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.docker.ProfileFlakeDirMountedPath, program),
-		}, "\n"),
-	}
+	// wsFlakeHostPath, wsFlakeMountedPath := nix.WorkspaceFlakeDir()
+	//
+	// nixShell := []string{
+	// 	"nix",
+	// 	"shell",
+	// 	fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
+	// 	"--command",
+	// 	"bash",
+	// 	"-c",
+	// 	strings.Join([]string{
+	// 		fmt.Sprintf("cd %s", wsFlakeMountedPath),
+	// 		fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.executorArgs.ProfileFlakeDirMountedPath, program),
+	// 	}, "\n"),
+	// }
 
 	// Always use interactive mode for now
 	interactiveFlag := "-it"
@@ -71,21 +69,21 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
 		// STEP: profile flake dir
-		"-v", addMount(nix.profile.ProfileFlakeDir, nix.docker.ProfileFlakeDirMountedPath, "z"),
+		"-v", addMount(nix.profile.ProfileFlakeDir, nix.executorArgs.ProfileFlakeDirMountedPath, "z"),
 
 		// Mount Home
-		"-v", addMount(nix.profile.FakeHomeDir, nix.docker.FakeHomeMountedPath, "z"),
+		"-v", addMount(nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath, "z"),
 
 		// Mount current flake directory
-		"-v", addMount(wsFlakeHostPath, wsFlakeMountedPath, "Z"),
+		"-v", addMount(nix.executorArgs.WorkspaceDirHostPath, nix.executorArgs.WorkspaceDirMountedPath, "Z"),
 
 		// STEP: Nix Store
-		"-v", addMount(nix.profile.NixDir, nix.docker.NixDirMountedPath, "z"),
+		"-v", addMount(nix.profile.NixDir, nix.executorArgs.NixDirMountedPath, "z"),
 
 		// STEP: project dir
 		"-v", addMount(cwd, cwd, "Z"),
 
-		"-e", addEnv("HOME", nix.docker.FakeHomeMountedPath),
+		"-e", addEnv("HOME", nix.executorArgs.FakeHomeMountedPath),
 		"-e", addEnv("USER", ctx.EnvVars["USER"]),
 		"-e", addEnv("TERM", ctx.EnvVars["TERM"]),
 		"-e", addEnv("TERMINFO", ctx.EnvVars["TERMINFO"]),
@@ -93,9 +91,9 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 		// STEP: mounts terminfo file, so that your cli tools know and behave according to it
 		"-v", addMount(ctx.EnvVars["TERMINFO"], ctx.EnvVars["TERMINFO"], "ro", "z"),
 
-		"-e", addEnv("XDG_CACHE_HOME", filepath.Join(nix.docker.FakeHomeMountedPath, ".cache")),
-		"-e", addEnv("XDG_CONFIG_HOME", filepath.Join(nix.docker.FakeHomeMountedPath, ".config")),
-		"-e", addEnv("XDG_DATA_HOME", filepath.Join(nix.docker.FakeHomeMountedPath, ".local", "share")),
+		"-e", addEnv("XDG_CACHE_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".cache")),
+		"-e", addEnv("XDG_CONFIG_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".config")),
+		"-e", addEnv("XDG_DATA_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".local", "share")),
 
 		// nix config
 		"-e", addEnv("NIX_CONFIG", ctx.EnvVars["NIX_CONFIG"]),
@@ -107,8 +105,10 @@ func (nix *Nix) dockerShell(ctx ShellContext, program string) (*exec.Cmd, error)
 		"--rm", interactiveFlag, "ghcr.io/nxtcoder17/nix:nonroot",
 	}
 
-	// dockerCmd = append(dockerCmd, "--")
-	dockerCmd = append(dockerCmd, nixShell...)
-
-	return exec.CommandContext(ctx, dockerCmd[0], dockerCmd[1:]...), nil
+	return func(cmd string, args ...string) *exec.Cmd {
+		dockerCmd = append(dockerCmd, "--")
+		dockerCmd = append(dockerCmd, cmd)
+		dockerCmd = append(dockerCmd, args...)
+		return exec.CommandContext(ctx, dockerCmd[0], dockerCmd[1:]...)
+	}, nil
 }

@@ -1,34 +1,31 @@
 package nix
 
 import (
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
-type BubbleWrap struct {
-	profile *Profile
+func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
 
-	ProfileFlakeDirMountedPath string
-	FakeHomeMountedPath        string
-	NixDirMountedPath          string
-	WorkspacesDirMountedPath   string
-	StaticNixBinMountedPath    string
-}
+	cwdHash := fmt.Sprintf("%x-%s", md5.Sum([]byte(dir)), filepath.Base(dir))
 
-func UseBubbleWrap(profile *Profile) (*BubbleWrap, error) {
-	bwrap := BubbleWrap{
-		profile: profile,
-
+	bwrap := ExecutorArgs{
+		PWD:                        dir,
+		NixBinaryMountedPath:       "/nix/bin/nix",
 		ProfileFlakeDirMountedPath: "/profile",
 		FakeHomeMountedPath:        "/home/nixy",
 		NixDirMountedPath:          "/nix",
-		WorkspacesDirMountedPath:   "/workspace",
-		StaticNixBinMountedPath:    "/nix/bin/nix",
+		WorkspaceDirMountedPath:    "/workspace",
+		WorkspaceDirHostPath:       filepath.Join(profile.WorkspacesDir, cwdHash),
 	}
 
 	return &bwrap, nil
@@ -45,12 +42,7 @@ func exists(path string) bool {
 	return false
 }
 
-func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, error) {
-	pwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
+func (nix *Nix) bubblewrapShell(ctx ShellContext) (func(cmd string, args ...string) *exec.Cmd, error) {
 	roBinds := []string{
 		// "--ro-bind", "/bin", "/bin",
 		"--ro-bind", "/etc", "/etc",
@@ -61,8 +53,6 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, er
 		"--ro-bind", "/usr", "/usr",
 		// "--ro-bind", "/var", "/var",
 	}
-
-	hostPath, mountedPath := nix.WorkspaceFlakeDir()
 
 	bwrapArgs := []string{
 		// no-zombie processes
@@ -86,9 +76,9 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, er
 		"--tmpfs", "/tmp",
 
 		// Custom User Home for nixy BubbleWrap shell
-		"--bind", nix.profile.FakeHomeDir, nix.bubbleWrap.FakeHomeMountedPath,
+		"--bind", nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath,
 		"--clearenv",
-		"--setenv", "HOME", nix.bubbleWrap.FakeHomeMountedPath,
+		"--setenv", "HOME", nix.executorArgs.FakeHomeMountedPath,
 		"--setenv", "USER", os.Getenv("USER"),
 		"--setenv", "TERM", os.Getenv("TERM"),
 
@@ -98,9 +88,9 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, er
 
 		"--setenv", "XDG_SESSION_TYPE", os.Getenv("XDG_SESSION_TYPE"),
 		"--setenv", "TERM_PROGRAM", os.Getenv("TERM_PROGRAM"),
-		"--setenv", "XDG_CACHE_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".cache"),
-		"--setenv", "XDG_CONFIG_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".config"),
-		"--setenv", "XDG_DATA_HOME", filepath.Join(nix.bubbleWrap.FakeHomeMountedPath, ".local", "share"),
+		"--setenv", "XDG_CACHE_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".cache"),
+		"--setenv", "XDG_CONFIG_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".config"),
+		"--setenv", "XDG_DATA_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".local", "share"),
 		// nix config
 		"--setenv", "NIX_CONFIG", os.Getenv("NIX_CONFIG"),
 
@@ -110,19 +100,19 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, er
 		"--setenv", "NIXY_WORKSPACE_FLAKE_DIR", os.Getenv("NIXY_WORKSPACE_FLAKE_DIR"),
 
 		// STEP: read-write binds
-		"--ro-bind", nix.profile.ProfileFlakeDir, nix.bubbleWrap.ProfileFlakeDirMountedPath,
-		"--tmpfs", nix.bubbleWrap.WorkspacesDirMountedPath,
-		"--ro-bind", hostPath, mountedPath,
+		"--ro-bind", nix.profile.ProfileFlakeDir, nix.executorArgs.ProfileFlakeDirMountedPath,
+		// "--tmpfs", nix.executorArgs.WorkspaceDirMountedPath,
+		"--bind", nix.executorArgs.WorkspaceDirHostPath, nix.executorArgs.WorkspaceDirMountedPath,
 
 		// Nix Store for nixy bubblewrap shell
-		"--bind", nix.profile.NixDir, nix.bubbleWrap.NixDirMountedPath,
-		"--bind", nix.profile.StaticNixBinPath, nix.bubbleWrap.StaticNixBinMountedPath,
+		"--bind", nix.profile.NixDir, nix.executorArgs.NixDirMountedPath,
+		"--bind", nix.profile.StaticNixBinPath, nix.profile.StaticNixBinPath,
 
 		// Current Working Directory as it is
-		"--bind", pwd, pwd,
+		"--bind", nix.executorArgs.PWD, nix.executorArgs.PWD,
 	}
 
-	_, mountedWorkspacePath := nix.WorkspaceFlakeDir()
+	// _, mountedWorkspacePath := nix.WorkspaceFlakeDir()
 
 	if !exists(nix.profile.StaticNixBinPath) {
 		if err := downloadStaticNixBinary(ctx, nix.profile.StaticNixBinPath); err != nil {
@@ -130,22 +120,25 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext, program string) (*exec.Cmd, er
 		}
 	}
 
-	nixShell := []string{
-		nix.bubbleWrap.StaticNixBinMountedPath,
-		"shell",
-		fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
-		"--command",
-		"bash",
-		"-c",
-		strings.Join([]string{
-			fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(nix.bubbleWrap.StaticNixBinMountedPath)),
-			fmt.Sprintf("cd %s", mountedWorkspacePath),
-			fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.bubbleWrap.ProfileFlakeDirMountedPath, program),
-		}, "\n"),
-	}
+	// nixShell := []string{
+	// 	nix.executorArgs.NixBinaryMountedPath,
+	// 	"shell",
+	// 	fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
+	// 	"--command",
+	// 	"bash",
+	// 	"-c",
+	// 	strings.Join([]string{
+	// 		fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(nix.executorArgs.NixBinaryMountedPath)),
+	// 		fmt.Sprintf("cd %s", mountedWorkspacePath),
+	// 		fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.executorArgs.ProfileFlakeDirMountedPath, program),
+	// 	}, "\n"),
+	// }
 
-	bwrapArgs = append(bwrapArgs, roBinds...)
-	bwrapArgs = append(bwrapArgs, nixShell...)
+	return func(cmd string, args ...string) *exec.Cmd {
+		bwrapArgs = append(bwrapArgs, roBinds...)
+		bwrapArgs = append(bwrapArgs, cmd)
+		bwrapArgs = append(bwrapArgs, args...)
 
-	return exec.CommandContext(ctx, "bwrap", bwrapArgs...), nil
+		return exec.CommandContext(ctx, "bwrap", bwrapArgs...)
+	}, nil
 }

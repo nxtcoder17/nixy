@@ -16,14 +16,14 @@ func XDGDataDir() string {
 	return filepath.Join(xdgDataHome, "nixy")
 }
 
-func (nix *Nix) PrepareShellCommand(ctx ShellContext, program string) (*exec.Cmd, error) {
+func (nix *Nix) PrepareShellCommand(ctx ShellContext) (func(cmd string, args ...string) *exec.Cmd, error) {
 	switch nix.executor {
 	case LocalExecutor:
-		return nix.localShell(ctx, program)
+		return nix.localShell(ctx)
 	case DockerExecutor:
-		return nix.dockerShell(ctx, program)
+		return nix.dockerShell(ctx)
 	case BubbleWrapExecutor:
-		return nix.bubblewrapShell(ctx, program)
+		return nix.bubblewrapShell(ctx)
 	default:
 		return nil, fmt.Errorf("unknown executor: %s, only local and docker executors are supported", nix.executor)
 

@@ -180,6 +180,22 @@ func main() {
 					return nil
 				},
 			},
+			{
+				Name:    "build",
+				Suggest: true,
+				Action: func(ctx context.Context, c *cli.Command) error {
+					n, err := loadFromNixyfile(ctx, c)
+					if err != nil {
+						return err
+					}
+
+					if err := n.Build(ctx, c.Args().First()); err != nil {
+						return err
+					}
+
+					return nil
+				},
+			},
 		},
 
 		Suggest: true,
