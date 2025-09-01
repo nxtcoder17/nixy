@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"strings"
 	"text/template"
 )
 
@@ -24,6 +25,7 @@ func init() {
 			}
 			return false
 		},
+		"hasPrefix": strings.HasPrefix,
 	})
 	if _, err := wsFlake.Parse(wsFlakeContent); err != nil {
 		panic(err)
