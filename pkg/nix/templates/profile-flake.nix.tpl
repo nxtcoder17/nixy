@@ -28,7 +28,9 @@
           # hardeningDisable = [ "all" ];
 
           buildInputs = with pkgs; [
-            uutils-coreutils-noprefix
+            coreutils-full
+            unixtools.whereis
+            which
             ncurses
             # your packages here
           ];

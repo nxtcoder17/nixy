@@ -54,8 +54,10 @@ type ExecutorArgs struct {
 	FakeHomeMountedPath        string
 	NixDirMountedPath          string
 
-	WorkspaceDirHostPath    string
-	WorkspaceDirMountedPath string
+	WorkspaceFlakeDirHostPath    string
+	WorkspaceFlakeDirMountedPath string
+
+	EnvVars ExecutorEnvVars
 }
 
 type Build struct {
@@ -116,8 +118,8 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 
 	nix.ConfigFile = &f
 
-	if err := os.MkdirAll(nix.executorArgs.WorkspaceDirHostPath, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create dir %s: %s", nix.executorArgs.WorkspaceDirHostPath, err)
+	if err := os.MkdirAll(nix.executorArgs.WorkspaceFlakeDirHostPath, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create dir %s: %s", nix.executorArgs.WorkspaceFlakeDirHostPath, err)
 	}
 
 	hasPkgUpdate := false
