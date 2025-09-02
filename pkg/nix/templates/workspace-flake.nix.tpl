@@ -166,14 +166,19 @@
             if [ -e shell-hook.sh ]; then
               source "shell-hook.sh"
             fi
-            cd {{$projectDir}}
+
+            if [ "$NIXY_BUILD_HOOK" = "true" ] && [ -e build-hook.sh ]; then
+              source "build-hook.sh"
+            fi
+
+            {{- /* cd {{$projectDir}} */}}
           '';
         };
 
         {{- range $name, $build := $builds }}
         packages.{{$name}} = let
             closure = pkgs.buildEnv {
-              name = "env";
+              name = "build-env";
               paths = [
                 {{- range $k := $nixpkgsList -}}
                 {{- range $_, $v := (index $build.PackagesMap $k) }}
@@ -185,26 +190,37 @@
           in pkgs.stdenv.mkDerivation {
             name = "{{$name}}";
             nativeBuildInputs = with pkgs; [
-              uutils-coreutils-noprefix
+              {{- /* INFO: with uutils, date lib is missing nanosecond support */}}
+              {{- /* uutils-coreutils-noprefix */}}
+
+              coreutils-full
             ];
+            SOURCE_DATE_EPOCH = "0";
             src = [
               closure
 
               {{- range $v := $build.Paths }}
-              {{- /* {{ if not (hasPrefix "$v" "./") -}} */}}
-              {{- /* ./ */}}
-              {{- /* {{- end }} */}}
               {{$v}}
               {{- end }}
             ];
+
             unpackPhase = ":";
-            fixupPhase = ":";
+
             installPhase = ''
-              echo "SRC is: $src"
-              echo "OUT is: $out"
               mkdir -p $out
-              echo cp -r $src $out
-              cp -r $src $out
+
+              shopt -s extglob
+              for item in $src; do
+                if [ -d "$item" ]; then
+                  result=$(stripHash "$item" )
+                  echo "item: $item, result: $result"
+                  cp -r "$item"/!(share) $out
+                else
+                  result=$(stripHash "$item" )
+                  echo "item: $item, result: $result"
+                  cp "$item" $out/$(stripHash "$item")
+                fi
+              done
             '';
           };
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -16,54 +17,50 @@ type ShellContext struct {
 	EnvVars map[string]string
 }
 
-func (n *Nix) Shell(ctx context.Context, shell string) error {
-	if shell == "" {
+const (
+	ShellHookFileName = "shell-hook.sh"
+	BuildHookFileName = "build-hook.sh"
+)
+
+func (nix *Nix) writeWorkspaceFlake() error {
+	flakeParams, err := nix.GenerateWorkspaceFlakeParams()
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "shell-hook.sh"), []byte(nix.ShellHook), 0o744); err != nil {
+		return fmt.Errorf("write shell-hook.sh: %w", err)
+	}
+
+	flake, err := templates.RenderWorkspaceFlake(flakeParams)
+	if err != nil {
+		return fmt.Errorf("render flake.nix: %w", err)
+	}
+	return os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "flake.nix"), flake, 0o644)
+}
+
+func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, error) {
+	if err := n.writeWorkspaceFlake(); err != nil {
+		return nil, err
+	}
+
+	if program == "" {
 		if v, ok := os.LookupEnv("SHELL"); ok {
-			shell = v
+			program = filepath.Base(v)
 		} else {
-			shell = "bash"
+			program = "bash"
 		}
 	}
 
-	shell = filepath.Base(shell)
+	scripts := []string{}
 
-	if err := os.WriteFile(filepath.Join(n.executorArgs.WorkspaceDirHostPath, "shell-hook.sh"), []byte(n.ShellHook), 0o744); err != nil {
-		return err
-	}
-
-	workspaceFlakeParams, err := n.GenerateWorkspaceFlakeParams()
-	if err != nil {
-		return err
-	}
-
-	flake, err := templates.RenderWorkspaceFlake(workspaceFlakeParams)
-	if err != nil {
-		return fmt.Errorf("failed to write workspace's flake.nix: %w", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(n.executorArgs.WorkspaceDirHostPath, "flake.nix"), flake, 0o644); err != nil {
-		return fmt.Errorf("failed to create flake.nix at path: %s: %w", n.executorArgs.WorkspaceDirHostPath, err)
-	}
-
-	envVars := map[string]string{
-		"USER":       os.Getenv("USER"),
-		"TERM":       os.Getenv("TERM"),
-		"TERMINFO":   os.Getenv("TERMINFO"),
-		"NIX_CONFIG": "experimental-features = nix-command flakes",
-
-		"NIXY_SHELL":               "true",
-		"NIXY_WORKSPACE_DIR":       n.cwd,
-		"NIXY_WORKSPACE_FLAKE_DIR": n.executorArgs.WorkspaceDirMountedPath,
-	}
-
-	script := []string{}
 	if n.executorArgs.NixBinaryMountedPath != "nix" {
-		script = append(script, fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(n.executorArgs.NixBinaryMountedPath)))
+		scripts = append(scripts, fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(n.executorArgs.NixBinaryMountedPath)))
 	}
 
-	script = append(script,
-		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceDirMountedPath),
-		fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", n.executorArgs.ProfileFlakeDirMountedPath, shell),
+	scripts = append(scripts,
+		fmt.Sprintf("cd %s", n.executorArgs.PWD),
+		fmt.Sprintf("nix develop %s --quiet --quiet --override-input profile-flake %s --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, n.executorArgs.ProfileFlakeDirMountedPath, program),
 	)
 
 	nixShell := []string{
@@ -72,25 +69,30 @@ func (n *Nix) Shell(ctx context.Context, shell string) error {
 		"--command",
 		"bash",
 		"-c",
-		strings.Join(script, "\n"),
+		strings.Join(scripts, "\n"),
 	}
 
-	cmdfn, err := n.PrepareShellCommand(ShellContext{
-		Context: ctx,
-		EnvVars: envVars,
-	})
+	slog.Info("nix shell exec", "command", n.executorArgs.NixBinaryMountedPath)
+	cmd, err := n.PrepareShellCommand(ctx, n.executorArgs.NixBinaryMountedPath, nixShell...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	cmd := cmdfn(n.executorArgs.NixBinaryMountedPath, nixShell...)
-
+	cmd.Env = n.executorArgs.EnvVars.ToEnviron()
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 
-	slog.Debug("Executing", "command", cmd.String())
+	return cmd, nil
+}
 
+func (n *Nix) Shell(ctx context.Context, program string) error {
+	cmd, err := n.nixShellExec(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	slog.Debug("Executing", "command", cmd.String())
 	defer func() {
 		slog.Debug("Shell Exited")
 	}()

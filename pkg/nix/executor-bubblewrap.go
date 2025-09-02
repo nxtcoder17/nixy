@@ -1,7 +1,7 @@
 package nix
 
 import (
-	"crypto/md5"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,16 +16,29 @@ func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
 		return nil, err
 	}
 
-	cwdHash := fmt.Sprintf("%x-%s", md5.Sum([]byte(dir)), filepath.Base(dir))
+	fakeHomeMountedPath := "/home/nixy"
 
 	bwrap := ExecutorArgs{
-		PWD:                        dir,
-		NixBinaryMountedPath:       "/nix/bin/nix",
-		ProfileFlakeDirMountedPath: "/profile",
-		FakeHomeMountedPath:        "/home/nixy",
-		NixDirMountedPath:          "/nix",
-		WorkspaceDirMountedPath:    "/workspace",
-		WorkspaceDirHostPath:       filepath.Join(profile.WorkspacesDir, cwdHash),
+		PWD:                          dir,
+		NixBinaryMountedPath:         "/nix/bin/nix",
+		ProfileFlakeDirMountedPath:   "/profile",
+		FakeHomeMountedPath:          fakeHomeMountedPath,
+		NixDirMountedPath:            "/nix",
+		WorkspaceFlakeDirMountedPath: "/workspace",
+		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, dir),
+
+		EnvVars: ExecutorEnvVars{
+			User:                  os.Getenv("USER"),
+			Term:                  os.Getenv("TERM"),
+			TermInfo:              os.Getenv("TERMINFO"),
+			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
+			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
+			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
+			NixConfig:             "experimental-features = nix-command flakes",
+			NixyShell:             "true",
+			NixyWorkspaceDir:      dir,
+			NixyWorkspaceFlakeDir: "/workspace",
+		},
 	}
 
 	return &bwrap, nil
@@ -42,18 +55,7 @@ func exists(path string) bool {
 	return false
 }
 
-func (nix *Nix) bubblewrapShell(ctx ShellContext) (func(cmd string, args ...string) *exec.Cmd, error) {
-	roBinds := []string{
-		// "--ro-bind", "/bin", "/bin",
-		"--ro-bind", "/etc", "/etc",
-		// "--ro-bind-try", "/usr/share/terminfo", "/usr/share/terminfo",
-		// "--ro-bind", "/lib", "/lib",
-		// "--ro-bind", "/lib64", "/lib64",
-		// "--ro-bind", "/run", "/run",
-		"--ro-bind", "/usr", "/usr",
-		// "--ro-bind", "/var", "/var",
-	}
-
+func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...string) (*exec.Cmd, error) {
 	bwrapArgs := []string{
 		// no-zombie processes
 		"--die-with-parent",
@@ -75,34 +77,18 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext) (func(cmd string, args ...stri
 		"--dev", "/dev",
 		"--tmpfs", "/tmp",
 
-		// Custom User Home for nixy BubbleWrap shell
-		"--bind", nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath,
-		"--clearenv",
-		"--setenv", "HOME", nix.executorArgs.FakeHomeMountedPath,
-		"--setenv", "USER", os.Getenv("USER"),
-		"--setenv", "TERM", os.Getenv("TERM"),
+		"--ro-bind", "/etc", "/etc",
+		"--ro-bind", "/usr", "/usr",
 
 		// mounts terminfo file, so that your cli tools know and behave according to it
-		"--ro-bind", os.Getenv("TERMINFO"), os.Getenv("TERMINFO"),
-		"--setenv", "TERMINFO", os.Getenv("TERMINFO"),
-
-		"--setenv", "XDG_SESSION_TYPE", os.Getenv("XDG_SESSION_TYPE"),
-		"--setenv", "TERM_PROGRAM", os.Getenv("TERM_PROGRAM"),
-		"--setenv", "XDG_CACHE_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".cache"),
-		"--setenv", "XDG_CONFIG_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".config"),
-		"--setenv", "XDG_DATA_HOME", filepath.Join(nix.executorArgs.FakeHomeMountedPath, ".local", "share"),
-		// nix config
-		"--setenv", "NIX_CONFIG", os.Getenv("NIX_CONFIG"),
-
-		// STEP: nixy env vars
-		"--setenv", "NIXY_SHELL", os.Getenv("NIXY_SHELL"),
-		"--setenv", "NIXY_WORKSPACE_DIR", os.Getenv("NIXY_WORKSPACE_DIR"),
-		"--setenv", "NIXY_WORKSPACE_FLAKE_DIR", os.Getenv("NIXY_WORKSPACE_FLAKE_DIR"),
+		"--ro-bind", nix.executorArgs.EnvVars.TermInfo, nix.executorArgs.EnvVars.TermInfo,
 
 		// STEP: read-write binds
 		"--ro-bind", nix.profile.ProfileFlakeDir, nix.executorArgs.ProfileFlakeDirMountedPath,
-		// "--tmpfs", nix.executorArgs.WorkspaceDirMountedPath,
-		"--bind", nix.executorArgs.WorkspaceDirHostPath, nix.executorArgs.WorkspaceDirMountedPath,
+
+		// Custom User Home for nixy BubbleWrap shell
+		"--bind", nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath,
+		"--bind", nix.executorArgs.WorkspaceFlakeDirHostPath, nix.executorArgs.WorkspaceFlakeDirMountedPath,
 
 		// Nix Store for nixy bubblewrap shell
 		"--bind", nix.profile.NixDir, nix.executorArgs.NixDirMountedPath,
@@ -110,9 +96,16 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext) (func(cmd string, args ...stri
 
 		// Current Working Directory as it is
 		"--bind", nix.executorArgs.PWD, nix.executorArgs.PWD,
+		"--clearenv",
 	}
 
-	// _, mountedWorkspacePath := nix.WorkspaceFlakeDir()
+	envMap := nix.executorArgs.EnvVars.toMap()
+	for k, v := range envMap {
+		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
+	}
+
+	bwrapArgs = append(bwrapArgs, command)
+	bwrapArgs = append(bwrapArgs, args...)
 
 	if !exists(nix.profile.StaticNixBinPath) {
 		if err := downloadStaticNixBinary(ctx, nix.profile.StaticNixBinPath); err != nil {
@@ -120,25 +113,5 @@ func (nix *Nix) bubblewrapShell(ctx ShellContext) (func(cmd string, args ...stri
 		}
 	}
 
-	// nixShell := []string{
-	// 	nix.executorArgs.NixBinaryMountedPath,
-	// 	"shell",
-	// 	fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
-	// 	"--command",
-	// 	"bash",
-	// 	"-c",
-	// 	strings.Join([]string{
-	// 		fmt.Sprintf("PATH=%s:$PATH", filepath.Dir(nix.executorArgs.NixBinaryMountedPath)),
-	// 		fmt.Sprintf("cd %s", mountedWorkspacePath),
-	// 		fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.executorArgs.ProfileFlakeDirMountedPath, program),
-	// 	}, "\n"),
-	// }
-
-	return func(cmd string, args ...string) *exec.Cmd {
-		bwrapArgs = append(bwrapArgs, roBinds...)
-		bwrapArgs = append(bwrapArgs, cmd)
-		bwrapArgs = append(bwrapArgs, args...)
-
-		return exec.CommandContext(ctx, "bwrap", bwrapArgs...)
-	}, nil
+	return exec.CommandContext(ctx, "bwrap", bwrapArgs...), nil
 }
