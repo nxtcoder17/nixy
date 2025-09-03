@@ -14,6 +14,13 @@ type WorkspaceFlakeParams struct {
 
 	ProfileFlakeDir string
 	WorkspaceDir    string
+
+	Builds map[string]WorkspaceFlakePackgeBuild
+}
+
+type WorkspaceFlakePackgeBuild struct {
+	PackagesMap map[string][]string
+	Paths       []string
 }
 
 type ProfileFlakeParams struct {

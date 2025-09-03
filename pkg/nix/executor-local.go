@@ -1,48 +1,59 @@
 package nix
 
 import (
+	"context"
+	"crypto/md5"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
-func isNixInstalled() bool {
-	cmd := exec.Command("nix", "--version")
-	if err := cmd.Run(); err != nil {
-		return false
-	}
-	return true
+func deriveWorkspacePath(workspacesDir, cwd string) string {
+	sum := md5.Sum([]byte(cwd))
+	return filepath.Join(workspacesDir, fmt.Sprintf("%x-%s", sum, filepath.Base(cwd)))
 }
 
-func (nix *Nix) localShell(ctx ShellContext, program string) (*exec.Cmd, error) {
-	nixBin := "nix"
-
-	hostWorkspacePath, _ := nix.WorkspaceFlakeDir()
-
-	var script []string
-
-	if !isNixInstalled() {
-		if err := downloadStaticNixBinary(ctx, nix.profile.StaticNixBinPath); err != nil {
-			return nil, fmt.Errorf("failed to download static nix binary: %w", err)
+func UseLocal(profile *Profile) (*ExecutorArgs, error) {
+	nixPath, err := exec.LookPath("nix")
+	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, fmt.Errorf("nix is not installed on your machine. Please follow docs over `https://nixos.org/download/` to install nix on your machine")
 		}
-		nixBin = nix.profile.StaticNixBinPath
-		script = append(script, fmt.Sprintf("export PATH=%s:$PATH", filepath.Dir(nix.profile.StaticNixBinPath)))
 	}
 
-	nixShellArgs := []string{
-		"shell",
-		"--extra-experimental-features",
-		"nix-command flakes",
-		fmt.Sprintf("nixpkgs/%s#bash", nix.NixPkgs),
-		"--command",
-		"bash",
-		"-c",
-		strings.Join(append(script,
-			fmt.Sprintf("cd %s", hostWorkspacePath),
-			fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", nix.profile.ProfileFlakeDir, program),
-		), "\n"),
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
 	}
 
-	return exec.CommandContext(ctx, nixBin, nixShellArgs...), nil
+	wsHostPath := deriveWorkspacePath(profile.WorkspacesDir, dir)
+
+	return &ExecutorArgs{
+		PWD:                          dir,
+		NixBinaryMountedPath:         nixPath,
+		ProfileFlakeDirMountedPath:   profile.ProfileFlakeDir,
+		FakeHomeMountedPath:          profile.FakeHomeDir,
+		NixDirMountedPath:            profile.NixDir,
+		WorkspaceFlakeDirHostPath:    wsHostPath,
+		WorkspaceFlakeDirMountedPath: wsHostPath,
+
+		EnvVars: ExecutorEnvVars{
+			User:                  os.Getenv("USER"),
+			Term:                  os.Getenv("TERM"),
+			TermInfo:              os.Getenv("TERMINFO"),
+			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
+			XDGCacheHome:          filepath.Join(profile.FakeHomeDir, ".cache"),
+			XDGDataHome:           filepath.Join(profile.FakeHomeDir, ".local", "share"),
+			NixConfig:             "experimental-features = nix-command flakes",
+			NixyShell:             "true",
+			NixyWorkspaceDir:      dir,
+			NixyWorkspaceFlakeDir: dir,
+		},
+	}, nil
+}
+
+func (nix *Nix) localShell(ctx context.Context, command string, args ...string) (*exec.Cmd, error) {
+	return exec.CommandContext(ctx, command, args...), nil
 }

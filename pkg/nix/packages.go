@@ -113,8 +113,9 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 		PackagesMap:          map[string][]string{},
 		LibrariesMap:         map[string][]string{},
 		URLPackages:          []URLPackage{},
-		ProfileFlakeDir:      "",
+		ProfileFlakeDir:      n.executorArgs.ProfileFlakeDirMountedPath,
 		WorkspaceDir:         workspaceDir,
+		Builds:               map[string]WorkspaceFlakePackgeBuild{},
 	}
 
 	for _, pkg := range n.Packages {
@@ -162,13 +163,30 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 		result.LibrariesMap[nixpkg.Commit] = append(result.LibrariesMap[nixpkg.Commit], nixpkg.Name)
 	}
 
-	switch n.executor {
-	case LocalExecutor:
-		result.ProfileFlakeDir = n.profile.ProfileFlakeDir
-	case BubbleWrapExecutor:
-		result.ProfileFlakeDir = n.bubbleWrap.ProfileFlakeDirMountedPath
-	case DockerExecutor:
-		result.ProfileFlakeDir = n.docker.ProfileFlakeDirMountedPath
+	for key, build := range n.Builds {
+		pkgBuild := WorkspaceFlakePackgeBuild{
+			PackagesMap: map[string][]string{},
+			Paths:       build.Paths,
+		}
+
+		for _, pkg := range build.Packages {
+			if pkg.NixPackage != nil {
+				nixpkg := pkg.NixPackage
+
+				if nixpkg.Commit == "" {
+					nixpkg.Commit = n.NixPkgs
+				}
+
+				if _, ok := cache[nixpkg.Commit]; !ok {
+					cache[nixpkg.Commit] = struct{}{}
+					result.NixPkgsCommits = append(result.NixPkgsCommits, nixpkg.Commit)
+				}
+
+				pkgBuild.PackagesMap[nixpkg.Commit] = append(pkgBuild.PackagesMap[nixpkg.Commit], nixpkg.Name)
+			}
+		}
+
+		result.Builds[key] = pkgBuild
 	}
 
 	slices.Sort(result.NixPkgsCommits)

@@ -2,11 +2,9 @@ package nix
 
 import (
 	"context"
-	"crypto/md5"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -30,12 +28,12 @@ type Nix struct {
 
 	executor Executor `yaml:"-"`
 
+	executorArgs *ExecutorArgs `yaml:"-"`
+
 	sync.Mutex `yaml:"-"`
 	Logger     *slog.Logger `yaml:"-"`
 
-	profile    *Profile    `yaml:"-"`
-	bubbleWrap *BubbleWrap `yaml:"-"`
-	docker     *Docker     `yaml:"-"`
+	profile *Profile `yaml:"-"`
 
 	cwd string `yaml:"-"`
 
@@ -44,6 +42,27 @@ type Nix struct {
 	Libraries []string             `yaml:"libraries,omitempty"`
 
 	ShellHook string `yaml:"shellHook,omitempty"`
+
+	Builds map[string]Build `yaml:"builds,omitempty"`
+}
+
+type ExecutorArgs struct {
+	PWD string
+
+	NixBinaryMountedPath       string
+	ProfileFlakeDirMountedPath string
+	FakeHomeMountedPath        string
+	NixDirMountedPath          string
+
+	WorkspaceFlakeDirHostPath    string
+	WorkspaceFlakeDirMountedPath string
+
+	EnvVars ExecutorEnvVars
+}
+
+type Build struct {
+	Packages []*NormalizedPackage `yaml:"packages"`
+	Paths    []string             `yaml:"paths"`
 }
 
 func GetCurrentNixyProfile() string {
@@ -74,20 +93,23 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 	profile, err := NewProfile(ctx, GetCurrentNixyProfile())
 
 	nix := Nix{profile: profile, executor: GetCurrentNixyExecutor(), Logger: slog.Default(), cwd: dir}
-	if nix.executor == BubbleWrapExecutor {
-		bwrap, err := UseBubbleWrap(profile)
-		if err != nil {
-			return nil, err
-		}
-		nix.bubbleWrap = bwrap
-	}
 
-	if nix.executor == DockerExecutor {
-		docker, err := UseDocker(profile)
+	switch nix.executor {
+	case BubbleWrapExecutor:
+		nix.executorArgs, err = UseBubbleWrap(profile)
 		if err != nil {
 			return nil, err
 		}
-		nix.docker = docker
+	case DockerExecutor:
+		nix.executorArgs, err = UseDocker(profile)
+		if err != nil {
+			return nil, err
+		}
+	case LocalExecutor:
+		nix.executorArgs, err = UseLocal(profile)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if err := yaml.Unmarshal(b, &nix); err != nil {
@@ -96,21 +118,12 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 
 	nix.ConfigFile = &f
 
-	hostPath, _ := nix.WorkspaceFlakeDir()
-
-	if err := os.MkdirAll(hostPath, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create dir %s: %s", hostPath, err)
+	if err := os.MkdirAll(nix.executorArgs.WorkspaceFlakeDirHostPath, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create dir %s: %s", nix.executorArgs.WorkspaceFlakeDirHostPath, err)
 	}
-
-	// nix.Packages = make([]*NormalizedPackage, 0, len(nix.InputPackages))
 
 	hasPkgUpdate := false
 	for _, pkg := range nix.Packages {
-		// np, err := parsePackage(pkg)
-		// if err != nil {
-		// 	return nil, err
-		// }
-
 		// Fetch SHA256 if not provided
 		if pkg.URLPackage != nil && pkg.URLPackage.Sha256 == "" {
 			hash, err := fetchURLHash(pkg.URLPackage.URL)
@@ -131,29 +144,6 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 	}
 
 	return &nix, nil
-}
-
-func (n *Nix) WorkspaceFlakeDir() (host, mounted string) {
-	cwdHash := fmt.Sprintf("%x-%s", md5.Sum([]byte(n.cwd)), filepath.Base(n.cwd))
-
-	hostPath := filepath.Join(n.profile.WorkspacesDir, cwdHash)
-
-	switch n.executor {
-	case BubbleWrapExecutor:
-		// return hostPath, filepath.Join(n.bubbleWrap.WorkspacesDirMountedPath, cwdHash)
-		return hostPath, n.bubbleWrap.WorkspacesDirMountedPath
-	case DockerExecutor:
-		return hostPath, filepath.Join(n.docker.WorkspaceDirMountedPath)
-	}
-
-	return hostPath, hostPath
-}
-
-func (n *Nix) ProfileFlakeDir() (host, mounted string) {
-	if n.executor == BubbleWrapExecutor {
-		return n.profile.ProfileFlakeDir, n.bubbleWrap.ProfileFlakeDirMountedPath
-	}
-	return n.profile.ProfileFlakeDir, n.profile.ProfileFlakeDir
 }
 
 func (n *Nix) SyncToDisk() error {

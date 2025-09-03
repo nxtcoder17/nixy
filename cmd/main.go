@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -146,24 +147,6 @@ func main() {
 					return nil
 				},
 			},
-			// {
-			// 	Name:    "install",
-			// 	Usage:   "<pkgname>",
-			// 	Suggest: true,
-			// 	Action: func(ctx context.Context, c *cli.Command) error {
-			// 		n, err := loadFromNixyfile(c)
-			// 		if err != nil {
-			// 			return err
-			// 		}
-			//
-			// 		defer n.SyncToDisk()
-			// 		n.Packages = append(n.Packages, )
-			// 		if err := n.Install(ctx, c.Args().Slice()...); err != nil {
-			// 			return err
-			// 		}
-			// 		return nil
-			// 	},
-			// },
 			{
 				Name:    "shell",
 				Suggest: true,
@@ -173,7 +156,23 @@ func main() {
 						return err
 					}
 
-					if err := n.Shell(ctx, c.Args().First()); err != nil {
+					if err := n.Shell(ctx, strings.Join(c.Args().Slice(), " ")); err != nil {
+						return err
+					}
+
+					return nil
+				},
+			},
+			{
+				Name:    "build",
+				Suggest: true,
+				Action: func(ctx context.Context, c *cli.Command) error {
+					n, err := loadFromNixyfile(ctx, c)
+					if err != nil {
+						return err
+					}
+
+					if err := n.Build(ctx, c.Args().First()); err != nil {
 						return err
 					}
 
