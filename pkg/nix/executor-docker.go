@@ -59,7 +59,6 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 	dockerCmd := []string{
 		"docker", "run",
 		"--hostname", "nixy",
-		// "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
 		// STEP: profile flake dir
@@ -87,8 +86,7 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 		dockerCmd = append(dockerCmd, "-e", k+"="+v)
 	}
 
-	// dockerCmd = append(dockerCmd, "--rm", "-it", "ghcr.io/nxtcoder17/nix:nonroot")
-	dockerCmd = append(dockerCmd, "--rm", "-it", "alpine:latest")
+	dockerCmd = append(dockerCmd, "--rm", "-it", "gcr.io/distroless/static-debian12")
 	dockerCmd = append(dockerCmd, command)
 	dockerCmd = append(dockerCmd, args...)
 

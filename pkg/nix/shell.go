@@ -78,15 +78,11 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 	scripts = append(scripts,
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceFlakeDirMountedPath),
 		fmt.Sprintf("export PATH=%s", strings.Join(n.executorArgs.EnvVars.Path, ":")),
-		// fmt.Sprintf("nix develop --quiet --quiet --override-input profile-flake %s --command %s", n.executorArgs.ProfileFlakeDirMountedPath, program),
-		// fmt.Sprintf("nix develop --profile /tmp/dev-profile --command %s", program),
-		// fmt.Sprintf("nix develop /tmp/dev-profile --command %s", program),
 	)
 
 	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, "dev-profile")) {
 		scripts = append(scripts,
 			fmt.Sprintf("nix develop --profile %s/dev-profile --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, program),
-			// fmt.Sprintf("nix build .#devShells.default --out-link %s/dev-profile", n.executorArgs.WorkspaceFlakeDirMountedPath),
 		)
 	} else {
 		scripts = append(scripts,
@@ -94,14 +90,10 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 		)
 	}
 
-	// scripts = append(scripts,
-	// 	fmt.Sprintf("nix develop %s/dev-profile --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, program),
-	// )
-
 	nixShell := []string{
 		"shell",
 		"--ignore-environment",
-		// "--quiet", "--quiet",
+		"--quiet", "--quiet",
 		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs),
 		"--command",
 		"bash",

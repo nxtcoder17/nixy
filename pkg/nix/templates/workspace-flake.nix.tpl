@@ -5,7 +5,6 @@
 {{- $librariesMap := .LibrariesMap }}
 {{- $urlPackages := .URLPackages }}
 {{- $projectDir := .WorkspaceDir }}
-{{- $profileDir := .ProfileFlakeDir }}
 {{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 {{- $builds := .Builds -}}
 
@@ -15,14 +14,6 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsDefaultCommit}}";
     flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
-
-    {{- if $profileDir }}
-    profile-flake = {
-      url = "path:{{$profileDir}}";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-    };
-    {{- end }}
 
     {{- range $_, $v := $nixpkgsList }}
     nixpkgs_{{slice $v 0 7}}.url = "github:nixos/nixpkgs/{{$v}}";
@@ -34,7 +25,6 @@
       {{- range $_, $v := $nixpkgsList -}}
       nixpkgs_{{slice $v 0 7}},
       {{- end }}
-      {{- if $profileDir }} profile-flake {{- end }}
     }:
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -154,15 +144,9 @@
         devShells.default = pkgs.mkShell {
           # hardeningDisable = [ "all" ];
 
-          buildInputs = 
-            {{- if $profileDir}} 
-            profile-flake.devShells.${system}.default.buildInputs ++ 
-            {{- end }}
-            packages ++
-            urlPackages;
+          buildInputs = packages ++ urlPackages;
 
           shellHook = ''
-            echo "Here, in shell hook"
             if [ -n "${libraries}" ]; then
               export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
             fi
