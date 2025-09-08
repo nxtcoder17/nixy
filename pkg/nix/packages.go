@@ -113,7 +113,6 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 		PackagesMap:          map[string][]string{},
 		LibrariesMap:         map[string][]string{},
 		URLPackages:          []URLPackage{},
-		ProfileFlakeDir:      n.executorArgs.ProfileFlakeDirMountedPath,
 		WorkspaceDir:         workspaceDir,
 		Builds:               map[string]WorkspaceFlakePackgeBuild{},
 	}
