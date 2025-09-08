@@ -3,7 +3,7 @@ tasks:
     watch:
       extensions:
         - .go
-        - .nix.tpl
+        - .tpl
     env:
       CGO_ENABLED: 0
     cmd:

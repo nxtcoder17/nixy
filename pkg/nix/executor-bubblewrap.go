@@ -28,16 +28,20 @@ func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
 		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, dir),
 
 		EnvVars: ExecutorEnvVars{
-			User:                  os.Getenv("USER"),
-			Term:                  os.Getenv("TERM"),
-			TermInfo:              os.Getenv("TERMINFO"),
-			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
-			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
-			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
-			NixConfig:             "experimental-features = nix-command flakes",
+			User:           "nixy",
+			Home:           fakeHomeMountedPath,
+			Term:           os.Getenv("TERM"),
+			TermInfo:       os.Getenv("TERMINFO"),
+			XDGSessionType: os.Getenv("XDG_SESSION_TYPE"),
+			XDGCacheHome:   filepath.Join(fakeHomeMountedPath, ".cache"),
+			XDGDataHome:    filepath.Join(fakeHomeMountedPath, ".local", "share"),
+			Path: []string{
+				filepath.Dir(profile.StaticNixBinPath),
+			},
 			NixyShell:             "true",
 			NixyWorkspaceDir:      dir,
 			NixyWorkspaceFlakeDir: "/workspace",
+			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
 		},
 	}
 
@@ -88,6 +92,7 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...str
 
 		// Custom User Home for nixy BubbleWrap shell
 		"--bind", nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath,
+		"--setenv", "HOME", nix.executorArgs.FakeHomeMountedPath,
 		"--bind", nix.executorArgs.WorkspaceFlakeDirHostPath, nix.executorArgs.WorkspaceFlakeDirMountedPath,
 
 		// Nix Store for nixy bubblewrap shell

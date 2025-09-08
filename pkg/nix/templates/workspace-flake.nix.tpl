@@ -1,9 +1,10 @@
+{{- define "workspace-flake" }}
+
 {{- $nixpkgsList := .NixPkgsCommits }}
 {{- $packagesMap := .PackagesMap }}
 {{- $librariesMap := .LibrariesMap }}
 {{- $urlPackages := .URLPackages }}
 {{- $projectDir := .WorkspaceDir }}
-{{- $profileDir := .ProfileFlakeDir }}
 {{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 {{- $builds := .Builds -}}
 
@@ -13,14 +14,6 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsDefaultCommit}}";
     flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
-
-    {{- if $profileDir }}
-    profile-flake = {
-      url = "path:{{$profileDir}}";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-    };
-    {{- end }}
 
     {{- range $_, $v := $nixpkgsList }}
     nixpkgs_{{slice $v 0 7}}.url = "github:nixos/nixpkgs/{{$v}}";
@@ -32,7 +25,6 @@
       {{- range $_, $v := $nixpkgsList -}}
       nixpkgs_{{slice $v 0 7}},
       {{- end }}
-      {{- if $profileDir }} profile-flake {{- end }}
     }:
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -57,17 +49,17 @@
         os = builtins.elemAt (builtins.split "-" system) 2;
 
         packages = [
-          {{- range $k := $nixpkgsList -}}
-          {{- range $_, $v := (index $packagesMap $k) }}
-          pkgs_{{slice $k 0 7}}.{{$v}}
+          {{- range $k, $v := $packagesMap }}
+          {{- range $item := $v }}
+          pkgs_{{slice $k 0 7}}.{{$item}}
           {{- end }}
           {{- end }}
         ];
 
         libraries = pkgs.lib.makeLibraryPath [
-          {{- range $k := $nixpkgsList -}}
-          {{- range $_, $v := (index $librariesMap $k) }}
-          pkgs_{{slice $k 0 7}}.{{$v}}
+          {{- range $k, $v := $librariesMap }}
+          {{- range $item := $v }}
+          pkgs_{{slice $k 0 7}}.{{$item}}
           {{- end }}
           {{- end }}
         ];
@@ -152,17 +144,13 @@
         devShells.default = pkgs.mkShell {
           # hardeningDisable = [ "all" ];
 
-          buildInputs = 
-            {{- if $profileDir}} 
-            profile-flake.devShells.${system}.default.buildInputs ++ 
-            {{- end }}
-            packages ++
-            urlPackages;
+          buildInputs = packages ++ urlPackages;
 
           shellHook = ''
             if [ -n "${libraries}" ]; then
               export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
             fi
+
             if [ -e shell-hook.sh ]; then
               source "shell-hook.sh"
             fi
@@ -171,7 +159,7 @@
               source "build-hook.sh"
             fi
 
-            {{- /* cd {{$projectDir}} */}}
+            cd {{$projectDir}}
           '';
         };
 
@@ -180,9 +168,9 @@
             closure = pkgs.buildEnv {
               name = "build-env";
               paths = [
-                {{- range $k := $nixpkgsList -}}
-                {{- range $_, $v := (index $build.PackagesMap $k) }}
-                pkgs_{{slice $k 0 7}}.{{$v}}
+                {{- range $k, $v := $build.PackagesMap }}
+                {{- range $item := $v }}
+                pkgs_{{slice $k 0 7}}.{{$item}}
                 {{- end }}
                 {{- end }}
               ];
@@ -192,7 +180,6 @@
             nativeBuildInputs = with pkgs; [
               {{- /* INFO: with uutils, date lib is missing nanosecond support */}}
               {{- /* uutils-coreutils-noprefix */}}
-
               coreutils-full
             ];
             SOURCE_DATE_EPOCH = "0";
@@ -229,3 +216,4 @@
     );
 }
 
+{{- end }}

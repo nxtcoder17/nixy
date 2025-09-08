@@ -12,8 +12,7 @@ type WorkspaceFlakeParams struct {
 	LibrariesMap map[string][]string
 	URLPackages  []URLPackage
 
-	ProfileFlakeDir string
-	WorkspaceDir    string
+	WorkspaceDir string
 
 	Builds map[string]WorkspaceFlakePackgeBuild
 }

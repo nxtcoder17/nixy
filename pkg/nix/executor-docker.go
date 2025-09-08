@@ -19,7 +19,7 @@ func UseDocker(profile *Profile) (*ExecutorArgs, error) {
 
 	dockerCfg := ExecutorArgs{
 		PWD:                          dir,
-		NixBinaryMountedPath:         "nix",
+		NixBinaryMountedPath:         "/nix/bin/nix",
 		ProfileFlakeDirMountedPath:   "/profile",
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
@@ -27,16 +27,19 @@ func UseDocker(profile *Profile) (*ExecutorArgs, error) {
 		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, dir),
 
 		EnvVars: ExecutorEnvVars{
-			User:                  os.Getenv("USER"),
-			Term:                  os.Getenv("TERM"),
-			TermInfo:              os.Getenv("TERMINFO"),
-			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
-			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
-			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
-			NixConfig:             "experimental-features = nix-command flakes",
-			NixyShell:             "true",
+			User:           "nixy",
+			Home:           fakeHomeMountedPath,
+			Term:           os.Getenv("TERM"),
+			TermInfo:       os.Getenv("TERMINFO"),
+			XDGSessionType: os.Getenv("XDG_SESSION_TYPE"),
+			XDGCacheHome:   filepath.Join(fakeHomeMountedPath, ".cache"),
+			XDGDataHome:    filepath.Join(fakeHomeMountedPath, ".local", "share"),
+			Path: []string{
+				"/nix/bin/",
+			},
 			NixyWorkspaceDir:      dir,
 			NixyWorkspaceFlakeDir: "/workspace",
+			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
 		},
 	}
 
@@ -56,7 +59,6 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 	dockerCmd := []string{
 		"docker", "run",
 		"--hostname", "nixy",
-		// "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
 		// STEP: profile flake dir
@@ -64,6 +66,8 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 
 		// Mount Home
 		"-v", addMount(nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath, "z"),
+		"-e", "HOME=" + nix.executorArgs.FakeHomeMountedPath,
+		"-e", "PATH=/nix/bin",
 
 		// Mount current flake directory
 		"-v", addMount(nix.executorArgs.WorkspaceFlakeDirHostPath, nix.executorArgs.WorkspaceFlakeDirMountedPath, "Z"),
@@ -82,7 +86,7 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 		dockerCmd = append(dockerCmd, "-e", k+"="+v)
 	}
 
-	dockerCmd = append(dockerCmd, "--rm", "-it", "ghcr.io/nxtcoder17/nix:nonroot")
+	dockerCmd = append(dockerCmd, "--rm", "-it", "gcr.io/distroless/static-debian12")
 	dockerCmd = append(dockerCmd, command)
 	dockerCmd = append(dockerCmd, args...)
 

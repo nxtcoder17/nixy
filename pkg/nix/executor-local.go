@@ -41,15 +41,16 @@ func UseLocal(profile *Profile) (*ExecutorArgs, error) {
 
 		EnvVars: ExecutorEnvVars{
 			User:                  os.Getenv("USER"),
+			Home:                  profile.FakeHomeDir,
 			Term:                  os.Getenv("TERM"),
 			TermInfo:              os.Getenv("TERMINFO"),
 			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
 			XDGCacheHome:          filepath.Join(profile.FakeHomeDir, ".cache"),
 			XDGDataHome:           filepath.Join(profile.FakeHomeDir, ".local", "share"),
-			NixConfig:             "experimental-features = nix-command flakes",
-			NixyShell:             "true",
+			Path:                  []string{filepath.Dir(nixPath)},
 			NixyWorkspaceDir:      dir,
 			NixyWorkspaceFlakeDir: dir,
+			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
 		},
 	}, nil
 }
