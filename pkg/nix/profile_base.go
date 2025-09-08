@@ -82,6 +82,15 @@ func NewProfile(ctx context.Context, name string) (*Profile, error) {
 		return nil, fmt.Errorf("failed to create profile flake.nix: %w", err)
 	}
 
+	b, err = templates.RenderNixConf()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := os.WriteFile(filepath.Join(p.FakeHomeDir, ".config", "nix", "nix.conf"), b, 0o644); err != nil {
+		return nil, fmt.Errorf("failed to create profile's nix.conf: %w", err)
+	}
+
 	return &p, nil
 }
 
@@ -105,6 +114,7 @@ func (p *Profile) CreateDirs() error {
 
 		// we need to have this nix dir to be used for nix store
 		filepath.Join(p.NixDir, "var", "nix"),
+		filepath.Join(p.FakeHomeDir, ".config", "nix"),
 	}
 
 	for _, dir := range dirs {

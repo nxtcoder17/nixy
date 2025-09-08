@@ -2,9 +2,11 @@ package nix
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -24,7 +26,8 @@ type Context struct {
 }
 
 type Nix struct {
-	ConfigFile *string `yaml:"-"`
+	ConfigFile     *string `yaml:"-"`
+	hasHashChanged bool    `yaml:"-"`
 
 	executor Executor `yaml:"-"`
 
@@ -116,10 +119,31 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		return nil, err
 	}
 
+	sha256Hash := fmt.Sprintf("%x", sha256.New().Sum(b))
+
 	nix.ConfigFile = &f
 
 	if err := os.MkdirAll(nix.executorArgs.WorkspaceFlakeDirHostPath, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create dir %s: %s", nix.executorArgs.WorkspaceFlakeDirHostPath, err)
+	}
+
+	hashFilePath := filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "nixy.yml.sha256")
+
+	nix.hasHashChanged = true
+
+	if exists(hashFilePath) {
+		hash, err := os.ReadFile(hashFilePath)
+		if err != nil {
+			return nil, err
+		}
+
+		nix.hasHashChanged = fmt.Sprintf("%x", hash) != sha256Hash
+	}
+
+	if nix.hasHashChanged {
+		if err := os.WriteFile(hashFilePath, []byte(sha256Hash), 0o644); err != nil {
+			return nil, fmt.Errorf("failed to write sha256 hash (path: %s): %w", hashFilePath, err)
+		}
 	}
 
 	hasPkgUpdate := false

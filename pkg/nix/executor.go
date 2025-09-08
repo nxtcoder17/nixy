@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 func XDGDataDir() string {
@@ -32,32 +33,37 @@ func (nix *Nix) PrepareShellCommand(ctx context.Context, command string, args ..
 }
 
 type ExecutorEnvVars struct {
-	User                  string `json:"USER"`
-	Term                  string `json:"TERM"`
-	TermInfo              string `json:"TERMINFO"`
-	XDGSessionType        string `json:"XDG_SESSION_TYPE"`
-	XDGCacheHome          string `json:"XDG_CACHE_HOME"`
-	XDGDataHome           string `json:"XDG_DATA_HOME"`
-	NixConfig             string `json:"NIX_CONFIG"`
-	NixyShell             string `json:"NIXY_SHELL"`
-	NixyWorkspaceDir      string `json:"NIXY_WORKSPACE_DIR"`
-	NixyWorkspaceFlakeDir string `json:"NIXY_WORKSPACE_FLAKE_DIR"`
-	NixyBuildHook         string `json:"NIXY_BUILD_HOOK"`
+	User                  string   `json:"USER"`
+	Home                  string   `json:"HOME"`
+	Term                  string   `json:"TERM"`
+	TermInfo              string   `json:"TERMINFO"`
+	Path                  []string `json:"PATH"`
+	XDGSessionType        string   `json:"XDG_SESSION_TYPE"`
+	XDGCacheHome          string   `json:"XDG_CACHE_HOME"`
+	XDGDataHome           string   `json:"XDG_DATA_HOME"`
+	NixyShell             string   `json:"NIXY_SHELL"`
+	NixyWorkspaceDir      string   `json:"NIXY_WORKSPACE_DIR"`
+	NixyWorkspaceFlakeDir string   `json:"NIXY_WORKSPACE_FLAKE_DIR"`
+	NixyBuildHook         string   `json:"NIXY_BUILD_HOOK"`
+	NixConfDir            string   `json:"NIX_CONF_DIR"`
 }
 
 func (e *ExecutorEnvVars) toMap() map[string]string {
 	return map[string]string{
-		"USER":                     e.User,
-		"TERM":                     e.Term,
-		"TERMINFO":                 e.TermInfo,
-		"XDG_SESSION_TYPE":         e.XDGSessionType,
-		"XDG_CACHE_HOME":           e.XDGCacheHome,
-		"XDG_DATA_HOME":            e.XDGDataHome,
-		"NIX_CONFIG":               e.NixConfig,
-		"NIXY_SHELL":               e.NixyShell,
+		"USER":             e.User,
+		"HOME":             e.Home,
+		"TERM":             e.Term,
+		"TERMINFO":         e.TermInfo,
+		"XDG_SESSION_TYPE": e.XDGSessionType,
+		"XDG_CACHE_HOME":   e.XDGCacheHome,
+		"XDG_DATA_HOME":    e.XDGDataHome,
+		// "NIX_CONFIG":               "experimental-features = nix-command flakes",
+		"NIXY_SHELL":               "true",
+		"PATH":                     strings.Join(e.Path, ":"),
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,
 		"NIXY_WORKSPACE_FLAKE_DIR": e.NixyWorkspaceFlakeDir,
 		"NIXY_BUILD_HOOK":          e.NixyBuildHook,
+		"NIX_CONF_DIR":             e.NixConfDir,
 	}
 }
 
