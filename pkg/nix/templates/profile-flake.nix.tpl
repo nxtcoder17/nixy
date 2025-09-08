@@ -1,3 +1,5 @@
+{{- define "profile-flake" }}
+
 {{- $nixpkgsCommit := .NixPkgsCommit }}
 {
   description = "nixy profile flake";
@@ -41,3 +43,4 @@
       }
     );
 }
+{{- end }}

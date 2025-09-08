@@ -1,3 +1,5 @@
+{{- define "workspace-flake" }}
+
 {{- $nixpkgsList := .NixPkgsCommits }}
 {{- $packagesMap := .PackagesMap }}
 {{- $librariesMap := .LibrariesMap }}
@@ -57,17 +59,17 @@
         os = builtins.elemAt (builtins.split "-" system) 2;
 
         packages = [
-          {{- range $k := $nixpkgsList -}}
-          {{- range $_, $v := (index $packagesMap $k) }}
-          pkgs_{{slice $k 0 7}}.{{$v}}
+          {{- range $k, $v := $packagesMap }}
+          {{- range $item := $v }}
+          pkgs_{{slice $k 0 7}}.{{$item}}
           {{- end }}
           {{- end }}
         ];
 
         libraries = pkgs.lib.makeLibraryPath [
-          {{- range $k := $nixpkgsList -}}
-          {{- range $_, $v := (index $librariesMap $k) }}
-          pkgs_{{slice $k 0 7}}.{{$v}}
+          {{- range $k, $v := $librariesMap }}
+          {{- range $item := $v }}
+          pkgs_{{slice $k 0 7}}.{{$item}}
           {{- end }}
           {{- end }}
         ];
@@ -160,9 +162,11 @@
             urlPackages;
 
           shellHook = ''
+            echo "Here, in shell hook"
             if [ -n "${libraries}" ]; then
               export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
             fi
+
             if [ -e shell-hook.sh ]; then
               source "shell-hook.sh"
             fi
@@ -171,7 +175,7 @@
               source "build-hook.sh"
             fi
 
-            {{- /* cd {{$projectDir}} */}}
+            cd {{$projectDir}}
           '';
         };
 
@@ -180,9 +184,9 @@
             closure = pkgs.buildEnv {
               name = "build-env";
               paths = [
-                {{- range $k := $nixpkgsList -}}
-                {{- range $_, $v := (index $build.PackagesMap $k) }}
-                pkgs_{{slice $k 0 7}}.{{$v}}
+                {{- range $k, $v := $build.PackagesMap }}
+                {{- range $item := $v }}
+                pkgs_{{slice $k 0 7}}.{{$item}}
                 {{- end }}
                 {{- end }}
               ];
@@ -192,7 +196,6 @@
             nativeBuildInputs = with pkgs; [
               {{- /* INFO: with uutils, date lib is missing nanosecond support */}}
               {{- /* uutils-coreutils-noprefix */}}
-
               coreutils-full
             ];
             SOURCE_DATE_EPOCH = "0";
@@ -229,3 +232,4 @@
     );
 }
 
+{{- end }}

@@ -6,7 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/nxtcoder17/nixy/pkg/nix/templates"
 )
 
 func (n *Nix) Build(ctx context.Context, target string) error {
@@ -15,22 +16,16 @@ func (n *Nix) Build(ctx context.Context, target string) error {
 		return fmt.Errorf("build target (%s) does not exist", target)
 	}
 
-	scripts := make([]string, 0, len(build.Paths))
-
-	for _, path := range build.Paths {
-		scripts = append(scripts, fmt.Sprintf("mkdir -p $(dirname %s) && cp -r %s/%s ./$(dirname %s)", path, n.executorArgs.PWD, path, path))
+	b, err := templates.RenderBuildHook(templates.BuildHookParams{
+		ProjectDir:  n.executorArgs.PWD,
+		BuildTarget: target,
+		CopyPaths:   build.Paths,
+	})
+	if err != nil {
+		return err
 	}
 
-	scripts = append(scripts,
-		"set -e",
-		"echo i am being sourced",
-		"mkdir -p .builds",
-		fmt.Sprintf("nix build --quiet --quiet %s#%s -o .builds/%s", n.executorArgs.WorkspaceFlakeDirMountedPath, target, target),
-		"echo i am being executed",
-		"exit 1",
-	)
-
-	if err := os.WriteFile(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, BuildHookFileName), []byte(strings.Join(scripts, "\n")), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, BuildHookFileName), b, 0o644); err != nil {
 		return err
 	}
 
