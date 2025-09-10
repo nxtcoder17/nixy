@@ -86,6 +86,12 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 		dockerCmd = append(dockerCmd, "-e", k+"="+v)
 	}
 
+	if !exists(nix.profile.StaticNixBinPath) {
+		if err := downloadStaticNixBinary(ctx, nix.profile.StaticNixBinPath); err != nil {
+			return nil, err
+		}
+	}
+
 	dockerCmd = append(dockerCmd, "--rm", "-it", "gcr.io/distroless/static-debian12")
 	dockerCmd = append(dockerCmd, command)
 	dockerCmd = append(dockerCmd, args...)
