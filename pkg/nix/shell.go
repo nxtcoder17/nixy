@@ -75,6 +75,10 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
 	}
 
+	for k, v := range n.Env {
+		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
+	}
+
 	scripts = append(scripts,
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceFlakeDirMountedPath),
 		fmt.Sprintf("export PATH=%s", strings.Join(n.executorArgs.EnvVars.Path, ":")),

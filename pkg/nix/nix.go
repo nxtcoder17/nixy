@@ -44,6 +44,8 @@ type Nix struct {
 	Packages  []*NormalizedPackage `yaml:"packages"`
 	Libraries []string             `yaml:"libraries,omitempty"`
 
+	Env map[string]string `yaml:"env,omitempty"`
+
 	ShellHook string `yaml:"shellHook,omitempty"`
 
 	Builds map[string]Build `yaml:"builds,omitempty"`
