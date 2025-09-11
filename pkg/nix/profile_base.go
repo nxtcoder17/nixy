@@ -73,7 +73,7 @@ func NewProfile(ctx context.Context, name string) (*Profile, error) {
 		return nil, fmt.Errorf("failed to save profile into a profile.json: %w", err)
 	}
 
-	b, err := templates.RenderProfileFlake(ProfileFlakeParams{NixPkgsCommit: nixpkgsHash})
+	b, err := templates.RenderProfileFlake(templates.ProfileFlakeParams{NixPkgsCommit: nixpkgsHash})
 	if err != nil {
 		return nil, err
 	}

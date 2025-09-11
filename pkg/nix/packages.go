@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nxtcoder17/nixy/pkg/nix/templates"
 	"gopkg.in/yaml.v3"
 )
 
@@ -99,7 +100,7 @@ func parseNixPackage(pkg string) (*NormalizedPackage, error) {
 	}}, nil
 }
 
-func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
+func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, error) {
 	cache := make(map[string]struct{})
 
 	workspaceDir, err := os.Getwd()
@@ -107,14 +108,14 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	result := WorkspaceFlakeParams{
+	result := templates.WorkspaceFlakeParams{
 		NixPkgsDefaultCommit: n.NixPkgs,
 		NixPkgsCommits:       []string{},
 		PackagesMap:          map[string][]string{},
 		LibrariesMap:         map[string][]string{},
-		URLPackages:          []URLPackage{},
+		URLPackages:          []templates.URLPackage{},
 		WorkspaceDir:         workspaceDir,
-		Builds:               map[string]WorkspaceFlakePackgeBuild{},
+		Builds:               map[string]templates.WorkspaceFlakePackgeBuild{},
 	}
 
 	for _, pkg := range n.Packages {
@@ -134,7 +135,11 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 		}
 
 		if pkg.URLPackage != nil {
-			result.URLPackages = append(result.URLPackages, *pkg.URLPackage)
+			result.URLPackages = append(result.URLPackages, templates.URLPackage{
+				Name:   pkg.URLPackage.Name,
+				URL:    pkg.URLPackage.URL,
+				Sha256: pkg.URLPackage.Sha256,
+			})
 		}
 	}
 
@@ -163,7 +168,7 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 	}
 
 	for key, build := range n.Builds {
-		pkgBuild := WorkspaceFlakePackgeBuild{
+		pkgBuild := templates.WorkspaceFlakePackgeBuild{
 			PackagesMap: map[string][]string{},
 			Paths:       build.Paths,
 		}
@@ -189,7 +194,7 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*WorkspaceFlakeParams, error) {
 	}
 
 	slices.Sort(result.NixPkgsCommits)
-	slices.SortFunc(result.URLPackages, func(a, b URLPackage) int {
+	slices.SortFunc(result.URLPackages, func(a, b templates.URLPackage) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 

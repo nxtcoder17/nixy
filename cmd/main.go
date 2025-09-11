@@ -120,17 +120,7 @@ func main() {
 							},
 						},
 						Action: func(ctx context.Context, c *cli.Command) error {
-							profileName := c.StringArg("profile-name")
-							if profileName == "" {
-								v, ok := os.LookupEnv("NIXY_PROFILE")
-								if !ok {
-									fmt.Println("Must Specify one argument")
-									return nil
-								}
-								profileName = v
-							}
-
-							if err := nix.ProfileEdit(ctx, profileName); err != nil {
+							if err := nix.ProfileEdit(ctx, c.Args().First()); err != nil {
 								return err
 							}
 

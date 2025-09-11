@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -51,6 +52,33 @@ type Nix struct {
 	Builds map[string]Build `yaml:"builds,omitempty"`
 }
 
+var nixyEnvVars struct {
+	NixyProfile         string
+	NixyExecutor        Executor
+	NixyUseProfileFlake bool
+}
+
+func init() {
+	if v, ok := os.LookupEnv("NIXY_PROFILE"); ok {
+		nixyEnvVars.NixyProfile = v
+	} else {
+		nixyEnvVars.NixyProfile = "default"
+	}
+
+	if v, ok := os.LookupEnv("NIXY_EXECUTOR"); ok {
+		nixyEnvVars.NixyExecutor = Executor(v)
+	} else {
+		nixyEnvVars.NixyExecutor = "local"
+	}
+
+	if v, ok := os.LookupEnv("NIXY_USE_PROFILE_FLAKE"); ok {
+		v = strings.TrimSpace(v)
+		nixyEnvVars.NixyUseProfileFlake = v == "1" || strings.EqualFold(v, "true")
+	} else {
+		nixyEnvVars.NixyUseProfileFlake = false
+	}
+}
+
 type ExecutorArgs struct {
 	PWD string
 
@@ -70,20 +98,6 @@ type Build struct {
 	Paths    []string             `yaml:"paths"`
 }
 
-func GetCurrentNixyProfile() string {
-	if v, ok := os.LookupEnv("NIXY_PROFILE"); ok {
-		return v
-	}
-	return "default"
-}
-
-func GetCurrentNixyExecutor() Executor {
-	if v, ok := os.LookupEnv("NIXY_EXECUTOR"); ok {
-		return Executor(v)
-	}
-	return LocalExecutor
-}
-
 func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 	b, err := os.ReadFile(f)
 	if err != nil {
@@ -95,9 +109,14 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		return nil, fmt.Errorf("failed to read current working directory: %w", err)
 	}
 
-	profile, err := NewProfile(ctx, GetCurrentNixyProfile())
+	profile, err := NewProfile(ctx, nixyEnvVars.NixyProfile)
 
-	nix := Nix{profile: profile, executor: GetCurrentNixyExecutor(), Logger: slog.Default(), cwd: dir}
+	nix := Nix{
+		profile:  profile,
+		executor: nixyEnvVars.NixyExecutor,
+		Logger:   slog.Default(),
+		cwd:      dir,
+	}
 
 	switch nix.executor {
 	case BubbleWrapExecutor:
@@ -215,7 +234,7 @@ func (n *Nix) SyncToDisk() error {
 }
 
 func InitNixyFile(ctx context.Context, dest string) error {
-	profile, err := NewProfile(ctx, GetCurrentNixyProfile())
+	profile, err := NewProfile(ctx, nixyEnvVars.NixyProfile)
 	if err != nil {
 		return err
 	}

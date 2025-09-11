@@ -33,19 +33,25 @@ func (nix *Nix) PrepareShellCommand(ctx context.Context, command string, args ..
 }
 
 type ExecutorEnvVars struct {
-	User                  string   `json:"USER"`
-	Home                  string   `json:"HOME"`
-	Term                  string   `json:"TERM"`
-	TermInfo              string   `json:"TERMINFO"`
-	Path                  []string `json:"PATH"`
-	XDGSessionType        string   `json:"XDG_SESSION_TYPE"`
-	XDGCacheHome          string   `json:"XDG_CACHE_HOME"`
-	XDGDataHome           string   `json:"XDG_DATA_HOME"`
-	NixyShell             string   `json:"NIXY_SHELL"`
-	NixyWorkspaceDir      string   `json:"NIXY_WORKSPACE_DIR"`
-	NixyWorkspaceFlakeDir string   `json:"NIXY_WORKSPACE_FLAKE_DIR"`
-	NixyBuildHook         string   `json:"NIXY_BUILD_HOOK"`
-	NixConfDir            string   `json:"NIX_CONF_DIR"`
+	User           string   `json:"USER"`
+	Home           string   `json:"HOME"`
+	Term           string   `json:"TERM"`
+	TermInfo       string   `json:"TERMINFO"`
+	Path           []string `json:"PATH"`
+	XDGSessionType string   `json:"XDG_SESSION_TYPE"`
+	XDGCacheHome   string   `json:"XDG_CACHE_HOME"`
+	XDGDataHome    string   `json:"XDG_DATA_HOME"`
+
+	// Nixy Env Vars
+	NixyExecutor        string `json:"NIXY_EXECUTOR"`
+	NixyProfile         string `json:"NIXY_PROFILE"`
+	NixyUseProfileFlake string `json:"NIXY_USE_PROFILE_FLAKE"`
+
+	NixyShell             string `json:"NIXY_SHELL"`
+	NixyWorkspaceDir      string `json:"NIXY_WORKSPACE_DIR"`
+	NixyWorkspaceFlakeDir string `json:"NIXY_WORKSPACE_FLAKE_DIR"`
+	NixyBuildHook         string `json:"NIXY_BUILD_HOOK"`
+	NixConfDir            string `json:"NIX_CONF_DIR"`
 }
 
 func (e *ExecutorEnvVars) toMap() map[string]string {
@@ -58,6 +64,11 @@ func (e *ExecutorEnvVars) toMap() map[string]string {
 		"XDG_CACHE_HOME":   e.XDGCacheHome,
 		"XDG_DATA_HOME":    e.XDGDataHome,
 		// "NIX_CONFIG":               "experimental-features = nix-command flakes",
+
+		"NIXY_EXECUTOR":          string(nixyEnvVars.NixyExecutor),
+		"NIXY_PROFILE":           nixyEnvVars.NixyProfile,
+		"NIXY_USE_PROFILE_FLAKE": fmt.Sprintf("%v", nixyEnvVars.NixyUseProfileFlake),
+
 		"NIXY_SHELL":               "true",
 		"PATH":                     strings.Join(e.Path, ":"),
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,
