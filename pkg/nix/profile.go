@@ -40,6 +40,9 @@ func ProfileCreate(ctx context.Context, name string) error {
 
 // ProfileEdit opens the profile's flake.nix in the user's editor
 func ProfileEdit(ctx context.Context, name string) error {
+	if name == "" {
+		name = nixyEnvVars.NixyProfile
+	}
 	profile, err := NewProfile(ctx, name)
 	if err != nil {
 		return err
