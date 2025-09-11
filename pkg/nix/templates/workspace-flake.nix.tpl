@@ -8,6 +8,9 @@
 {{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 {{- $builds := .Builds -}}
 
+{{- $useProfileFlake := .UseProfileFlake }}
+{{- $profileFlakeDir := .ProfileFlakeDir }}
+
 {
   description = "nixy project development workspace";
 
@@ -15,6 +18,10 @@
     nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsDefaultCommit}}";
     flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
 
+    {{- if $useProfileFlake }}
+    profile-flake.url = "{{$profileFlakeDir}}";
+    {{- end }}
+    
     {{- range $_, $v := $nixpkgsList }}
     nixpkgs_{{slice $v 0 7}}.url = "github:nixos/nixpkgs/{{$v}}";
     {{- end }}
@@ -22,6 +29,11 @@
 
   outputs = {
       self, nixpkgs, flake-utils,
+
+      {{- if $useProfileFlake }}
+      profile-flake,
+      {{- end }}
+
       {{- range $_, $v := $nixpkgsList -}}
       nixpkgs_{{slice $v 0 7}},
       {{- end }}
@@ -144,7 +156,7 @@
         devShells.default = pkgs.mkShell {
           # hardeningDisable = [ "all" ];
 
-          buildInputs = packages ++ urlPackages;
+          buildInputs = {{- if $useProfileFlake }} profile-flake.devShells.${system}.default.buildInputs ++ {{- end }} packages ++ urlPackages;
 
           shellHook = ''
             if [ -n "${libraries}" ]; then

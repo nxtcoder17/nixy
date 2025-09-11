@@ -58,7 +58,35 @@ func init() {
 	}
 }
 
-func RenderWorkspaceFlake(values any) ([]byte, error) {
+// copy of pkg/nix.URLPackage
+type URLPackage struct {
+	Name   string `yaml:"name"`
+	URL    string `yaml:"url"`
+	Sha256 string `yaml:"sha256,omitempty"`
+}
+
+type WorkspaceFlakeParams struct {
+	NixPkgsDefaultCommit string
+	NixPkgsCommits       []string
+
+	PackagesMap  map[string][]string
+	LibrariesMap map[string][]string
+	URLPackages  []URLPackage
+
+	WorkspaceDir string
+
+	Builds map[string]WorkspaceFlakePackgeBuild
+
+	UseProfileFlake bool
+	ProfileFlakeDir string
+}
+
+type WorkspaceFlakePackgeBuild struct {
+	PackagesMap map[string][]string
+	Paths       []string
+}
+
+func RenderWorkspaceFlake(values *WorkspaceFlakeParams) ([]byte, error) {
 	b := new(bytes.Buffer)
 	if err := t.ExecuteTemplate(b, "workspace-flake", values); err != nil {
 		return nil, err
@@ -67,7 +95,11 @@ func RenderWorkspaceFlake(values any) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func RenderProfileFlake(values any) ([]byte, error) {
+type ProfileFlakeParams struct {
+	NixPkgsCommit string
+}
+
+func RenderProfileFlake(values ProfileFlakeParams) ([]byte, error) {
 	b := new(bytes.Buffer)
 	if err := t.ExecuteTemplate(b, "profile-flake", values); err != nil {
 		return nil, fmt.Errorf("failed to render profile's flake.nix: %w", err)
