@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,18 +23,47 @@ const (
 	BuildHookFileName = "build-hook.sh"
 )
 
-func (nix *Nix) writeWorkspaceFlake() error {
-	if !nix.hasHashChanged {
+func (nix *Nix) writeWorkspaceFlake(ctx context.Context) error {
+	shouldGenerate := false
+
+	input := WorkspaceFlakeGenParams{
+		NixPkgsDefaultCommit: nix.NixPkgs,
+		WorkspaceDirPath:     nix.executorArgs.PWD,
+		Packages:             []*NormalizedPackage{},
+		Libraries:            []string{},
+		Builds:               map[string]Build{},
+	}
+
+	if nixyEnvVars.NixyUseProfile {
+		profileNix, err := LoadFromFile(ctx, nix.profile.ProfileNixyYAMLPath)
+		if err != nil {
+			return fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
+		}
+		shouldGenerate = profileNix.hasHashChanged
+		input.Packages = append(input.Packages, profileNix.Packages...)
+		input.Libraries = append(input.Libraries, profileNix.Libraries...)
+	}
+
+	if nix.hasHashChanged {
+		shouldGenerate = true
+		input.Packages = append(input.Packages, nix.Packages...)
+		input.Libraries = append(input.Libraries, nix.Libraries...)
+		maps.Copy(input.Builds, nix.Builds)
+	}
+
+	if !shouldGenerate {
 		return nil
 	}
 
-	flakeParams, err := nix.GenerateWorkspaceFlakeParams()
+	flakeParams, err := genWorkspaceFlakeParams(input)
 	if err != nil {
 		return err
 	}
 
-	flakeParams.UseProfileFlake = nixyEnvVars.NixyUseProfileFlake
-	flakeParams.ProfileFlakeDir = nix.profile.ProfileFlakeDir
+	// slog.Info("flakeParams", "URLPackages", flakeParams.URLPackages, "packages", input.Packages)
+
+	flakeParams.UseProfile = nixyEnvVars.NixyUseProfile
+	flakeParams.ProfilePath = nix.profile.ProfilePath
 
 	shellHook, err := templates.RenderShellHook(templates.ShellHookParams{
 		EnvVars:   nix.executorArgs.EnvVars.toMap(),
@@ -56,7 +86,7 @@ func (nix *Nix) writeWorkspaceFlake() error {
 }
 
 func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, error) {
-	if err := n.writeWorkspaceFlake(); err != nil {
+	if err := n.writeWorkspaceFlake(ctx); err != nil {
 		return nil, err
 	}
 
@@ -69,7 +99,7 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 	}
 
 	if n.executorArgs.EnvVars.NixConfDir == "" {
-		n.executorArgs.EnvVars.NixConfDir = n.executorArgs.ProfileFlakeDirMountedPath
+		n.executorArgs.EnvVars.NixConfDir = n.executorArgs.ProfileDirMountedPath
 	}
 
 	scripts := []string{}
@@ -86,14 +116,9 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceFlakeDirMountedPath),
 	)
 
-	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, "dev-profile")) || nixyEnvVars.NixyUseProfileFlake {
-		profileFlakeArgs := ""
-		if nixyEnvVars.NixyUseProfileFlake {
-			profileFlakeArgs = fmt.Sprintf("--override-input profile-flake %s", n.executorArgs.ProfileFlakeDirMountedPath)
-		}
-
+	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, "dev-profile")) {
 		scripts = append(scripts,
-			fmt.Sprintf("nix develop --profile %s/dev-profile %s --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, profileFlakeArgs, program),
+			fmt.Sprintf("nix develop --profile %s/dev-profile --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, program),
 		)
 	} else {
 		scripts = append(scripts,

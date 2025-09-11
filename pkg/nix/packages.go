@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/nxtcoder17/nixy/pkg/nix/templates"
+	"github.com/nxtcoder17/nixy/pkg/set"
 	"gopkg.in/yaml.v3"
 )
 
@@ -100,30 +100,40 @@ func parseNixPackage(pkg string) (*NormalizedPackage, error) {
 	}}, nil
 }
 
-func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, error) {
+type WorkspaceFlakeGenParams struct {
+	NixPkgsDefaultCommit string
+	WorkspaceDirPath     string
+	Packages             []*NormalizedPackage
+	Libraries            []string
+	Builds               map[string]Build
+}
+
+func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.WorkspaceFlakeParams, error) {
 	cache := make(map[string]struct{})
 
-	workspaceDir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
 	result := templates.WorkspaceFlakeParams{
-		NixPkgsDefaultCommit: n.NixPkgs,
+		NixPkgsDefaultCommit: params.NixPkgsDefaultCommit,
 		NixPkgsCommits:       []string{},
 		PackagesMap:          map[string][]string{},
 		LibrariesMap:         map[string][]string{},
 		URLPackages:          []templates.URLPackage{},
-		WorkspaceDir:         workspaceDir,
+		WorkspaceDir:         params.WorkspaceDirPath,
 		Builds:               map[string]templates.WorkspaceFlakePackgeBuild{},
 	}
 
-	for _, pkg := range n.Packages {
+	packagesMap := map[string]*set.Set[string]{}
+	librariesMap := map[string]*set.Set[string]{}
+
+	for _, pkg := range params.Packages {
+		if pkg == nil {
+			continue
+		}
+
 		if pkg.NixPackage != nil {
 			nixpkg := pkg.NixPackage
 
 			if nixpkg.Commit == "" {
-				nixpkg.Commit = n.NixPkgs
+				nixpkg.Commit = params.NixPkgsDefaultCommit
 			}
 
 			if _, ok := cache[nixpkg.Commit]; !ok {
@@ -131,7 +141,10 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, e
 				result.NixPkgsCommits = append(result.NixPkgsCommits, nixpkg.Commit)
 			}
 
-			result.PackagesMap[nixpkg.Commit] = append(result.PackagesMap[nixpkg.Commit], nixpkg.Name)
+			if _, ok := packagesMap[nixpkg.Commit]; !ok {
+				packagesMap[nixpkg.Commit] = &set.Set[string]{}
+			}
+			packagesMap[nixpkg.Commit].Add(nixpkg.Name)
 		}
 
 		if pkg.URLPackage != nil {
@@ -143,7 +156,7 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, e
 		}
 	}
 
-	for _, pkg := range n.Libraries {
+	for _, pkg := range params.Libraries {
 		np, err := parseNixPackage(pkg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse library (%s): %w", pkg, err)
@@ -156,7 +169,7 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, e
 		nixpkg := np.NixPackage
 
 		if nixpkg.Commit == "" {
-			nixpkg.Commit = n.NixPkgs
+			nixpkg.Commit = params.NixPkgsDefaultCommit
 		}
 
 		if _, ok := cache[nixpkg.Commit]; !ok {
@@ -164,10 +177,13 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, e
 			result.NixPkgsCommits = append(result.NixPkgsCommits, nixpkg.Commit)
 		}
 
-		result.LibrariesMap[nixpkg.Commit] = append(result.LibrariesMap[nixpkg.Commit], nixpkg.Name)
+		if _, ok := librariesMap[nixpkg.Commit]; !ok {
+			librariesMap[nixpkg.Commit] = &set.Set[string]{}
+		}
+		librariesMap[nixpkg.Commit].Add(nixpkg.Name)
 	}
 
-	for key, build := range n.Builds {
+	for key, build := range params.Builds {
 		pkgBuild := templates.WorkspaceFlakePackgeBuild{
 			PackagesMap: map[string][]string{},
 			Paths:       build.Paths,
@@ -178,7 +194,7 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, e
 				nixpkg := pkg.NixPackage
 
 				if nixpkg.Commit == "" {
-					nixpkg.Commit = n.NixPkgs
+					nixpkg.Commit = params.NixPkgsDefaultCommit
 				}
 
 				if _, ok := cache[nixpkg.Commit]; !ok {
@@ -191,6 +207,14 @@ func (n *Nix) GenerateWorkspaceFlakeParams() (*templates.WorkspaceFlakeParams, e
 		}
 
 		result.Builds[key] = pkgBuild
+	}
+
+	for k, v := range packagesMap {
+		result.PackagesMap[k] = v.ToSortedList()
+	}
+
+	for k, v := range librariesMap {
+		result.LibrariesMap[k] = v.ToSortedList()
 	}
 
 	slices.Sort(result.NixPkgsCommits)
