@@ -67,7 +67,7 @@ func (e *ExecutorEnvVars) toMap() map[string]string {
 
 		"NIXY_EXECUTOR":          string(nixyEnvVars.NixyExecutor),
 		"NIXY_PROFILE":           nixyEnvVars.NixyProfile,
-		"NIXY_USE_PROFILE_FLAKE": fmt.Sprintf("%v", nixyEnvVars.NixyUseProfileFlake),
+		"NIXY_USE_PROFILE_FLAKE": fmt.Sprintf("%v", nixyEnvVars.NixyUseProfile),
 
 		"NIXY_SHELL":               "true",
 		"PATH":                     strings.Join(e.Path, ":"),

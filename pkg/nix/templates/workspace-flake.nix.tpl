@@ -8,9 +8,6 @@
 {{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 {{- $builds := .Builds -}}
 
-{{- $useProfileFlake := .UseProfileFlake }}
-{{- $profileFlakeDir := .ProfileFlakeDir }}
-
 {
   description = "nixy project development workspace";
 
@@ -18,10 +15,6 @@
     nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsDefaultCommit}}";
     flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
 
-    {{- if $useProfileFlake }}
-    profile-flake.url = "{{$profileFlakeDir}}";
-    {{- end }}
-    
     {{- range $_, $v := $nixpkgsList }}
     nixpkgs_{{slice $v 0 7}}.url = "github:nixos/nixpkgs/{{$v}}";
     {{- end }}
@@ -29,10 +22,6 @@
 
   outputs = {
       self, nixpkgs, flake-utils,
-
-      {{- if $useProfileFlake }}
-      profile-flake,
-      {{- end }}
 
       {{- range $_, $v := $nixpkgsList -}}
       nixpkgs_{{slice $v 0 7}},
@@ -51,14 +40,6 @@
           config.allowUnfree = true;
         };
         {{- end }}
-
-        archMap = {
-          "x86_64" = "amd64";
-          "aarch64" = "arm64";
-        };
-
-        arch = builtins.getAttr (builtins.elemAt (builtins.split "-" system) 0) archMap;
-        os = builtins.elemAt (builtins.split "-" system) 2;
 
         packages = [
           {{- range $k, $v := $packagesMap }}
@@ -92,6 +73,7 @@
             };
             nativeBuildInputs = with pkgs; [
               unzip p7zip unrar xz gzip bzip2 zstd lzip
+              patchelf autoPatchelfHook
             ];
             unpackPhase = ''
               echo ">> Detecting archive type for $src"
@@ -102,6 +84,7 @@
                 if tar tf "$src" >/dev/null 2>&1; then
                   echo ">> Extracting tar archive"
                   tar xf "$src"
+                  ls -al .
                   return 0
                 fi
                 return 1
@@ -145,7 +128,27 @@
             '';
             installPhase = ''
               mkdir -p $out/bin
-              find . -type f -executable ! -name "*.so*" -exec cp {} $out/bin/ \;
+              shopt -s extglob
+              tmp_file=$(mktemp --tmpdir=/tmp)
+              echo "tmp file: $tmp_file"
+              ls | grep -v 'env-vars' > $tmp_file
+
+              total_count=$(cat $tmp_file | wc -l)
+              echo "total count: $total_count"
+
+              if [ $total_count -eq 1 ] ; then
+                filepath=$(sed "1q;d" $tmp_file)
+                if [ -d "$filepath" ]; then
+                  cp -r $filepath/* $out
+                else
+                  cp -r $filepath $out
+                fi
+              else
+                cp -r . $out
+              fi
+
+              echo "[##] printing contents of $out now"
+              ls -al $out
             '';
           })
 
@@ -156,7 +159,7 @@
         devShells.default = pkgs.mkShell {
           # hardeningDisable = [ "all" ];
 
-          buildInputs = {{- if $useProfileFlake }} profile-flake.devShells.${system}.default.buildInputs ++ {{- end }} packages ++ urlPackages;
+          buildInputs = packages ++ urlPackages;
 
           shellHook = ''
             if [ -n "${libraries}" ]; then
@@ -194,7 +197,7 @@
               {{- /* uutils-coreutils-noprefix */}}
               coreutils-full
             ];
-            SOURCE_DATE_EPOCH = "0";
+            {{- /* SOURCE_DATE_EPOCH = "0"; */}}
             src = [
               closure
 
@@ -211,12 +214,11 @@
               shopt -s extglob
               for item in $src; do
                 if [ -d "$item" ]; then
+                  # INFO: stripHash just removes nix hash part from the given name
                   result=$(stripHash "$item" )
-                  echo "item: $item, result: $result"
                   cp -r "$item"/!(share) $out
                 else
                   result=$(stripHash "$item" )
-                  echo "item: $item, result: $result"
                   cp "$item" $out/$(stripHash "$item")
                 fi
               done

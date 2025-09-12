@@ -33,7 +33,7 @@ func UseLocal(profile *Profile) (*ExecutorArgs, error) {
 	return &ExecutorArgs{
 		PWD:                          dir,
 		NixBinaryMountedPath:         nixPath,
-		ProfileFlakeDirMountedPath:   profile.ProfileFlakeDir,
+		ProfileDirMountedPath:        profile.ProfilePath,
 		FakeHomeMountedPath:          profile.FakeHomeDir,
 		NixDirMountedPath:            profile.NixDir,
 		WorkspaceFlakeDirHostPath:    wsHostPath,

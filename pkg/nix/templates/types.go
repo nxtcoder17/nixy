@@ -8,8 +8,8 @@ import (
 	"text/template"
 )
 
-//go:embed profile-flake.nix.tpl
-var profileFlakeContent string
+//go:embed profile-nixy.yml.tpl
+var profileNixyYamlContent string
 
 //go:embed workspace-flake.nix.tpl
 var wsFlakeContent string
@@ -38,8 +38,8 @@ func init() {
 		"hasPrefix": strings.HasPrefix,
 	})
 
-	if _, err := t.Parse(profileFlakeContent); err != nil {
-		panic(fmt.Errorf("failed to parse profile flake.nix: %w", err))
+	if _, err := t.Parse(profileNixyYamlContent); err != nil {
+		panic(fmt.Errorf("failed to parse profile nixy.yml: %w", err))
 	}
 	if _, err := t.Parse(wsFlakeContent); err != nil {
 		panic(fmt.Errorf("failed to parse workspace flake.nix: %w", err))
@@ -77,8 +77,8 @@ type WorkspaceFlakeParams struct {
 
 	Builds map[string]WorkspaceFlakePackgeBuild
 
-	UseProfileFlake bool
-	ProfileFlakeDir string
+	UseProfile  bool
+	ProfilePath string
 }
 
 type WorkspaceFlakePackgeBuild struct {
@@ -95,14 +95,14 @@ func RenderWorkspaceFlake(values *WorkspaceFlakeParams) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-type ProfileFlakeParams struct {
+type ProfileNixyYAMLParams struct {
 	NixPkgsCommit string
 }
 
-func RenderProfileFlake(values ProfileFlakeParams) ([]byte, error) {
+func RenderProfileNixyYAML(values ProfileNixyYAMLParams) ([]byte, error) {
 	b := new(bytes.Buffer)
-	if err := t.ExecuteTemplate(b, "profile-flake", values); err != nil {
-		return nil, fmt.Errorf("failed to render profile's flake.nix: %w", err)
+	if err := t.ExecuteTemplate(b, "profile-nixy.yml", values); err != nil {
+		return nil, fmt.Errorf("failed to render profile's nixy.yml: %w", err)
 	}
 
 	return b.Bytes(), nil

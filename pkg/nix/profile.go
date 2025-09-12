@@ -48,8 +48,9 @@ func ProfileEdit(ctx context.Context, name string) error {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, os.Getenv("EDITOR"), "flake.nix")
-	cmd.Dir = profile.ProfileFlakeDir
+	// cmd := exec.CommandContext(ctx, os.Getenv("EDITOR"), "flake.nix")
+	cmd := exec.CommandContext(ctx, os.Getenv("EDITOR"), "nixy.yml")
+	cmd.Dir = profile.ProfilePath
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -20,7 +20,7 @@ func UseDocker(profile *Profile) (*ExecutorArgs, error) {
 	dockerCfg := ExecutorArgs{
 		PWD:                          dir,
 		NixBinaryMountedPath:         "/nix/bin/nix",
-		ProfileFlakeDirMountedPath:   "/profile",
+		ProfileDirMountedPath:        "/profile",
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
 		WorkspaceFlakeDirMountedPath: "/workspace",
@@ -62,7 +62,7 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
 		// STEP: profile flake dir
-		"-v", addMount(nix.profile.ProfileFlakeDir, nix.executorArgs.ProfileFlakeDirMountedPath, "z"),
+		"-v", addMount(nix.profile.ProfilePath, nix.executorArgs.ProfileDirMountedPath, "z"),
 
 		// Mount Home
 		"-v", addMount(nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath, "z"),
