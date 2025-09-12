@@ -33,19 +33,15 @@ func (nix *Nix) PrepareShellCommand(ctx context.Context, command string, args ..
 }
 
 type ExecutorEnvVars struct {
-	User           string   `json:"USER"`
-	Home           string   `json:"HOME"`
-	Term           string   `json:"TERM"`
-	TermInfo       string   `json:"TERMINFO"`
+	User     string `json:"USER"`
+	Home     string `json:"HOME"`
+	Term     string `json:"TERM"`
+	TermInfo string `json:"TERMINFO"`
+
 	Path           []string `json:"PATH"`
 	XDGSessionType string   `json:"XDG_SESSION_TYPE"`
 	XDGCacheHome   string   `json:"XDG_CACHE_HOME"`
 	XDGDataHome    string   `json:"XDG_DATA_HOME"`
-
-	// Nixy Env Vars
-	NixyExecutor        string `json:"NIXY_EXECUTOR"`
-	NixyProfile         string `json:"NIXY_PROFILE"`
-	NixyUseProfileFlake string `json:"NIXY_USE_PROFILE_FLAKE"`
 
 	NixyShell             string `json:"NIXY_SHELL"`
 	NixyWorkspaceDir      string `json:"NIXY_WORKSPACE_DIR"`
@@ -56,18 +52,19 @@ type ExecutorEnvVars struct {
 
 func (e *ExecutorEnvVars) toMap() map[string]string {
 	return map[string]string{
-		"USER":             e.User,
-		"HOME":             e.Home,
-		"TERM":             e.Term,
-		"TERMINFO":         e.TermInfo,
+		"USER":     e.User,
+		"HOME":     e.Home,
+		"TERM":     e.Term,
+		"TERMINFO": e.TermInfo,
+
 		"XDG_SESSION_TYPE": e.XDGSessionType,
 		"XDG_CACHE_HOME":   e.XDGCacheHome,
 		"XDG_DATA_HOME":    e.XDGDataHome,
-		// "NIX_CONFIG":               "experimental-features = nix-command flakes",
 
-		"NIXY_EXECUTOR":          string(nixyEnvVars.NixyExecutor),
-		"NIXY_PROFILE":           nixyEnvVars.NixyProfile,
-		"NIXY_USE_PROFILE_FLAKE": fmt.Sprintf("%v", nixyEnvVars.NixyUseProfile),
+		// Nixy Env Vars
+		"NIXY_EXECUTOR":    string(nixyEnvVars.NixyExecutor),
+		"NIXY_PROFILE":     nixyEnvVars.NixyProfile,
+		"NIXY_USE_PROFILE": fmt.Sprintf("%v", nixyEnvVars.NixyUseProfile),
 
 		"NIXY_SHELL":               "true",
 		"PATH":                     strings.Join(e.Path, ":"),

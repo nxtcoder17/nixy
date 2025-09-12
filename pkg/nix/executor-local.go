@@ -40,10 +40,11 @@ func UseLocal(profile *Profile) (*ExecutorArgs, error) {
 		WorkspaceFlakeDirMountedPath: wsHostPath,
 
 		EnvVars: ExecutorEnvVars{
-			User:                  os.Getenv("USER"),
-			Home:                  profile.FakeHomeDir,
-			Term:                  os.Getenv("TERM"),
-			TermInfo:              os.Getenv("TERMINFO"),
+			User:     os.Getenv("USER"),
+			Home:     profile.FakeHomeDir,
+			Term:     os.Getenv("TERM"),
+			TermInfo: os.Getenv("TERMINFO"),
+
 			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
 			XDGCacheHome:          filepath.Join(profile.FakeHomeDir, ".cache"),
 			XDGDataHome:           filepath.Join(profile.FakeHomeDir, ".local", "share"),
