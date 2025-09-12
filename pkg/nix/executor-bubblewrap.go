@@ -21,7 +21,7 @@ func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
 	bwrap := ExecutorArgs{
 		PWD:                          dir,
 		NixBinaryMountedPath:         "/nix/bin/nix",
-		ProfileFlakeDirMountedPath:   "/profile",
+		ProfileDirMountedPath:        "/profile",
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
 		WorkspaceFlakeDirMountedPath: "/workspace",
@@ -88,7 +88,7 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...str
 		"--ro-bind", nix.executorArgs.EnvVars.TermInfo, nix.executorArgs.EnvVars.TermInfo,
 
 		// STEP: read-write binds
-		"--ro-bind", nix.profile.ProfileFlakeDir, nix.executorArgs.ProfileFlakeDirMountedPath,
+		"--ro-bind", nix.profile.ProfilePath, nix.executorArgs.ProfileDirMountedPath,
 
 		// Custom User Home for nixy BubbleWrap shell
 		"--bind", nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath,

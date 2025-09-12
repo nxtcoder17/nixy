@@ -53,9 +53,9 @@ type Nix struct {
 }
 
 var nixyEnvVars struct {
-	NixyProfile         string
-	NixyExecutor        Executor
-	NixyUseProfileFlake bool
+	NixyProfile    string
+	NixyExecutor   Executor
+	NixyUseProfile bool
 }
 
 func init() {
@@ -71,21 +71,21 @@ func init() {
 		nixyEnvVars.NixyExecutor = "local"
 	}
 
-	if v, ok := os.LookupEnv("NIXY_USE_PROFILE_FLAKE"); ok {
+	if v, ok := os.LookupEnv("NIXY_USE_PROFILE"); ok {
 		v = strings.TrimSpace(v)
-		nixyEnvVars.NixyUseProfileFlake = v == "1" || strings.EqualFold(v, "true")
+		nixyEnvVars.NixyUseProfile = v == "1" || strings.EqualFold(v, "true")
 	} else {
-		nixyEnvVars.NixyUseProfileFlake = false
+		nixyEnvVars.NixyUseProfile = false
 	}
 }
 
 type ExecutorArgs struct {
 	PWD string
 
-	NixBinaryMountedPath       string
-	ProfileFlakeDirMountedPath string
-	FakeHomeMountedPath        string
-	NixDirMountedPath          string
+	NixBinaryMountedPath  string
+	ProfileDirMountedPath string
+	FakeHomeMountedPath   string
+	NixDirMountedPath     string
 
 	WorkspaceFlakeDirHostPath    string
 	WorkspaceFlakeDirMountedPath string
@@ -101,7 +101,7 @@ type Build struct {
 func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 	b, err := os.ReadFile(f)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read nixy file (%s): %w", f, err)
 	}
 
 	dir, err := os.Getwd()
@@ -150,12 +150,16 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 
 	hashFilePath := filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "nixy.yml.sha256")
 
+	if f == nix.profile.ProfileNixyYAMLPath {
+		hashFilePath = filepath.Join(nix.profile.ProfilePath, "nixy.yml.sha256")
+	}
+
 	nix.hasHashChanged = true
 
 	if exists(hashFilePath) {
 		hash, err := os.ReadFile(hashFilePath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read hash file (%s): %w", hashFilePath, err)
 		}
 
 		nix.hasHashChanged = fmt.Sprintf("%x", hash) != sha256Hash
@@ -169,6 +173,9 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 
 	hasPkgUpdate := false
 	for _, pkg := range nix.Packages {
+		if pkg == nil {
+			continue
+		}
 		// Fetch SHA256 if not provided
 		if pkg.URLPackage != nil && pkg.URLPackage.Sha256 == "" {
 			hash, err := fetchURLHash(pkg.URLPackage.URL)
@@ -178,8 +185,6 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 			hasPkgUpdate = true
 			pkg.URLPackage.Sha256 = hash
 		}
-
-		nix.Packages = append(nix.Packages, pkg)
 	}
 
 	if hasPkgUpdate {
@@ -200,6 +205,10 @@ func (n *Nix) SyncToDisk() error {
 	set := make(map[string]struct{}, len(n.Packages))
 
 	for _, pkg := range n.Packages {
+		if pkg == nil {
+			continue
+		}
+
 		var key string
 
 		if pkg.NixPackage != nil {

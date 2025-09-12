@@ -12,14 +12,14 @@ import (
 
 // Profile represents a general profile that all executors can use
 type Profile struct {
-	Name              string
-	NixPkgsCommitHash string `json:"nixpkgs,omitempty"`
-	ProfilePath       string // ~/.local/share/nixy/profiles/<name>
-	ProfileFlakeDir   string
-	FakeHomeDir       string
-	WorkspacesDir     string
-	NixDir            string
-	StaticNixBinPath  string // Path for static nix binary
+	Name                string
+	NixPkgsCommitHash   string `json:"nixpkgs,omitempty"`
+	ProfilePath         string // ~/.local/share/nixy/profiles/<name>
+	FakeHomeDir         string
+	WorkspacesDir       string
+	NixDir              string
+	StaticNixBinPath    string // Path for static nix binary
+	ProfileNixyYAMLPath string
 }
 
 func GetProfile(name string) (*Profile, error) {
@@ -55,14 +55,14 @@ func NewProfile(ctx context.Context, name string) (*Profile, error) {
 	fakeHomeDir := filepath.Join(profilePath, "fake-home")
 
 	p := Profile{
-		Name:              name,
-		ProfilePath:       profilePath,
-		NixPkgsCommitHash: nixpkgsHash,
-		ProfileFlakeDir:   filepath.Join(profilePath, "flake"),
-		WorkspacesDir:     filepath.Join(profilePath, "workspaces"),
-		FakeHomeDir:       fakeHomeDir,
-		NixDir:            nixDir,
-		StaticNixBinPath:  filepath.Join(nixDir, "bin", "nix"),
+		Name:                name,
+		ProfilePath:         profilePath,
+		NixPkgsCommitHash:   nixpkgsHash,
+		WorkspacesDir:       filepath.Join(profilePath, "workspaces"),
+		FakeHomeDir:         fakeHomeDir,
+		NixDir:              nixDir,
+		StaticNixBinPath:    filepath.Join(nixDir, "bin", "nix"),
+		ProfileNixyYAMLPath: filepath.Join(profilePath, "nixy.yml"),
 	}
 
 	if err := p.CreateDirs(); err != nil {
@@ -73,12 +73,12 @@ func NewProfile(ctx context.Context, name string) (*Profile, error) {
 		return nil, fmt.Errorf("failed to save profile into a profile.json: %w", err)
 	}
 
-	b, err := templates.RenderProfileFlake(templates.ProfileFlakeParams{NixPkgsCommit: nixpkgsHash})
+	b, err := templates.RenderProfileNixyYAML(templates.ProfileNixyYAMLParams{NixPkgsCommit: nixpkgsHash})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := os.WriteFile(filepath.Join(p.ProfileFlakeDir, "flake.nix"), b, 0o644); err != nil {
+	if err := os.WriteFile(p.ProfileNixyYAMLPath, b, 0o644); err != nil {
 		return nil, fmt.Errorf("failed to create profile flake.nix: %w", err)
 	}
 
@@ -107,7 +107,6 @@ func (p *Profile) Save() error {
 func (p *Profile) CreateDirs() error {
 	dirs := []string{
 		p.ProfilePath,
-		p.ProfileFlakeDir,
 		p.WorkspacesDir,
 		p.FakeHomeDir,
 		filepath.Dir(p.StaticNixBinPath),
