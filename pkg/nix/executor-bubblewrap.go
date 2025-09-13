@@ -82,7 +82,6 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...str
 		"--tmpfs", "/tmp",
 
 		"--ro-bind", "/etc", "/etc",
-		"--ro-bind", "/usr", "/usr",
 
 		// mounts terminfo file, so that your cli tools know and behave according to it
 		"--ro-bind", nix.executorArgs.EnvVars.TermInfo, nix.executorArgs.EnvVars.TermInfo,
