@@ -165,8 +165,10 @@
 
           shellHook = ''
             export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
-            export LANG=en_US.UTF-8
-            export LC_ALL=$LANG
+            if [ -z "$LANG" ]; then
+              # INFO: if LANG env var unset, set it to en_US.UTF-8
+              export LANG="en_US.UTF-8"
+            fi
 
             if [ ! -e "/usr" ]; then
               # INFO: this ensures, we always have /usr/bin/env
