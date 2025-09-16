@@ -7,8 +7,9 @@ tasks:
     env:
       CGO_ENABLED: 0
     cmd:
-      - go build -o ./bin/nixy ./cmd/main.go
-      - echo "Build Successful ✅"
+      - run: build
+        env:
+          version: "dev"
 
   build:
     env:
@@ -21,14 +22,17 @@ tasks:
       GOARCH:
         default:
           sh: go env GOARCH
+      version:
+        required: true
     cmd:
-      - go build -v -o $binpath-$GOOS-$GOARCH -ldflags="-s -w" -tags urfave_cli_no_docs ./cmd/
+      - go build -v -o $binpath-$GOOS-$GOARCH -ldflags="-s -w -X 'main.Version=$version'" -tags urfave_cli_no_docs ./cmd/
+      - echo "Build Successful ✅"
 
   build:all:
     parallel: true
-    # env:
-    #   GOMODCACHE: "/tmp/y/modcache"
-    #   GOCACHE: "/tmp/y/gocache"
+    env:
+      version:
+        required: true
     cmd:
       - run: build
         env:
