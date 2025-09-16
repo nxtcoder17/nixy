@@ -7,9 +7,7 @@ tasks:
     env:
       CGO_ENABLED: 0
     cmd:
-      - run: build
-        env:
-          version: "dev"
+      - run build version="$(echo \"dev built at $(date '+%X on %b %d, %4Y')\")"
 
   build:
     env:
