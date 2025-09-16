@@ -66,7 +66,7 @@ packages:
 ```
 
 #### URL Packages
-Download and install packages directly from URLs:
+Download and install packages directly from URLs with environment variable expansion:
 ```yaml
 packages:
   - name: kubectl
@@ -76,7 +76,20 @@ packages:
   - name: terraform
     url: https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
     # Automatically detects archive type and extracts
+    
+  # Environment variables are expanded in URLs
+  - name: my-tool
+    url: https://github.com/org/tool/releases/download/v${MY_VERSION}/tool-${NIXY_OS}-${NIXY_ARCH}.tar.gz
+    # Uses MY_VERSION from env section and built-in NIXY_* vars
+
+env:
+  MY_VERSION: "1.2.3"  # Custom env vars can be used in URLs
 ```
+
+Built-in environment variables available:
+- `NIXY_OS` - Operating system (e.g., linux, darwin)
+- `NIXY_ARCH` - Architecture (e.g., amd64, arm64)
+- `NIXY_FULL_ARCH` - Full architecture string (e.g., x86_64)
 
 ### 🔧 Build System
 Define reproducible builds:
