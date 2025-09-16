@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -43,6 +44,14 @@ type ExecutorEnvVars struct {
 	XDGCacheHome   string   `json:"XDG_CACHE_HOME"`
 	XDGDataHome    string   `json:"XDG_DATA_HOME"`
 
+	NixyOS string `json:"NIXY_OS"`
+
+	// NIXY_ARCH has value like "amd64" or "arm64"
+	NixyArch string `json:"NIXY_ARCH"`
+
+	// NIXY_ARCH_FULL has value like "x86_64"
+	NixyArchFull string `json:"NIXY_ARCH_FULL"`
+
 	NixyShell             string `json:"NIXY_SHELL"`
 	NixyWorkspaceDir      string `json:"NIXY_WORKSPACE_DIR"`
 	NixyWorkspaceFlakeDir string `json:"NIXY_WORKSPACE_FLAKE_DIR"`
@@ -62,6 +71,21 @@ func (e *ExecutorEnvVars) toMap() map[string]string {
 		"XDG_DATA_HOME":    e.XDGDataHome,
 
 		// Nixy Env Vars
+		"NIXY_OS":   runtime.GOOS,
+		"NIXY_ARCH": runtime.GOARCH,
+		"NIXY_ARCH_FULL": func() string {
+			switch runtime.GOARCH {
+			case "amd64":
+				return "x86_64"
+			case "386":
+				return "i686"
+			case "arm64":
+				return "aarch64"
+			default:
+				return runtime.GOARCH
+			}
+		}(),
+
 		"NIXY_EXECUTOR":    string(nixyEnvVars.NixyExecutor),
 		"NIXY_PROFILE":     nixyEnvVars.NixyProfile,
 		"NIXY_USE_PROFILE": fmt.Sprintf("%v", nixyEnvVars.NixyUseProfile),
