@@ -52,6 +52,7 @@
             # your packages here
             go
             nginx
+            coreutils
           ];
 
           shellHook = ''

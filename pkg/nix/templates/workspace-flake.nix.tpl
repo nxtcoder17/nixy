@@ -176,6 +176,12 @@
               ln -sf ${pkgs.coreutils} /usr
             fi
 
+            # INFO: it seems like many tools have hardcoded value for /bin/sh, so we need to make sure that /bin/sh exists
+            if [ ! -e "/bin/sh" ]; then
+              mkdir -p /bin
+              ln -sf $(which bash) /bin/sh
+            fi
+
             if [ -n "${libraries}" ]; then
               export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
             fi
