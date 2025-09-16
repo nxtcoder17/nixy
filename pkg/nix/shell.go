@@ -60,11 +60,6 @@ func (nix *Nix) writeWorkspaceFlake(ctx context.Context) error {
 		return err
 	}
 
-	// slog.Info("flakeParams", "URLPackages", flakeParams.URLPackages, "packages", input.Packages)
-
-	flakeParams.UseProfile = nixyEnvVars.NixyUseProfile
-	flakeParams.ProfilePath = nix.profile.ProfilePath
-
 	shellHook, err := templates.RenderShellHook(templates.ShellHookParams{
 		EnvVars:   nix.executorArgs.EnvVars.toMap(),
 		ShellHook: nix.ShellHook,

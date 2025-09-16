@@ -7,7 +7,7 @@
 {{- $projectDir := .WorkspaceDir }}
 {{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 {{- $builds := .Builds -}}
-
+{{- $osArch := .OSArch }}
 {
   description = "nixy project development workspace";
 
@@ -68,7 +68,7 @@
             src = pkgs.fetchurl {
               url = "{{$pkg.URL}}";
               {{- if $pkg.Sha256 }}
-              sha256 = "{{$pkg.Sha256}}";
+              sha256 = builtins.getAttr "{{$osArch}}" (builtins.fromJSON ''{{$pkg.Sha256 | toJson }}'');
               {{- else }}
               sha256 = pkgs.lib.fakeSha256;  # Will error and show correct hash
               {{- end }}
@@ -143,7 +143,7 @@
                 if [ -d "$filepath" ]; then
                   cp -r $filepath/* $out
                 else
-                  cp -r $filepath $out
+                  cp -r $filepath $out/bin
                 fi
               else
                 cp -r . $out

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -20,10 +21,17 @@ type NixPackage struct {
 	Commit string
 }
 
+func getOSArch() string {
+	return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
+}
+
 type URLPackage struct {
-	Name   string `yaml:"name"`
-	URL    string `yaml:"url"`
-	Sha256 string `yaml:"sha256,omitempty"`
+	Name        string `yaml:"name"`
+	URL         string `yaml:"url"`
+	RenderedURL string `yaml:"-"`
+
+	// Sha256 is a map of $OS/$ARCH to sha256 corresponding to the binary
+	Sha256 map[string]string `yaml:"sha256,omitempty"`
 }
 
 type NormalizedPackage struct {
@@ -32,7 +40,6 @@ type NormalizedPackage struct {
 }
 
 func (p *NormalizedPackage) UnmarshalYAML(value *yaml.Node) error {
-	// try string form
 	var s string
 	if err := value.Decode(&s); err == nil {
 		np, err := parseNixPackage(s)
@@ -43,7 +50,6 @@ func (p *NormalizedPackage) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 
-	// else try object form
 	var urlpkg URLPackage
 	if err := value.Decode(&urlpkg); err != nil {
 		return err
@@ -74,7 +80,7 @@ func (p *NormalizedPackage) MarshalYAML() (any, error) {
 
 	// if only Name, emit as string
 	if p.URLPackage != nil {
-		return map[string]string{
+		return map[string]any{
 			"name":   p.URLPackage.Name,
 			"url":    p.URLPackage.URL,
 			"sha256": p.URLPackage.Sha256,
@@ -119,6 +125,7 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		URLPackages:          []templates.URLPackage{},
 		WorkspaceDir:         params.WorkspaceDirPath,
 		Builds:               map[string]templates.WorkspaceFlakePackgeBuild{},
+		OSArch:               getOSArch(),
 	}
 
 	packagesMap := map[string]*set.Set[string]{}
@@ -150,7 +157,7 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		if pkg.URLPackage != nil {
 			result.URLPackages = append(result.URLPackages, templates.URLPackage{
 				Name:   pkg.URLPackage.Name,
-				URL:    pkg.URLPackage.URL,
+				URL:    pkg.URLPackage.RenderedURL,
 				Sha256: pkg.URLPackage.Sha256,
 			})
 		}

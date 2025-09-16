@@ -26,6 +26,8 @@ func main() {
 		Version = fmt.Sprintf("nightly | %s", time.Now().Format(time.RFC3339))
 	}
 
+	os.Setenv("NIXY_VERSION", Version)
+
 	cmd := cli.Command{
 		Name:        "nixy",
 		Version:     Version,
