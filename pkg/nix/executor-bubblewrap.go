@@ -49,7 +49,7 @@ func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
 }
 
 func exists(path string) bool {
-	_, err := os.Stat(path)
+	_, err := os.Lstat(path)
 	if err == nil {
 		return true
 	}
