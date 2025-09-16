@@ -42,6 +42,8 @@
         {{- end }}
 
         packages = [
+          pkgs.glibcLocales
+
           {{- range $k, $v := $packagesMap }}
           {{- range $item := $v }}
           pkgs_{{slice $k 0 7}}.{{$item}}
@@ -162,6 +164,17 @@
           buildInputs = packages ++ urlPackages;
 
           shellHook = ''
+            export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
+            if [ -z "$LANG" ]; then
+              # INFO: if LANG env var unset, set it to en_US.UTF-8
+              export LANG="en_US.UTF-8"
+            fi
+
+            if [ ! -e "/usr" ]; then
+              # INFO: this ensures, we always have /usr/bin/env
+              ln -sf ${pkgs.coreutils} /usr
+            fi
+
             if [ -n "${libraries}" ]; then
               export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
             fi
