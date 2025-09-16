@@ -67,11 +67,12 @@
             pname = "{{$pkg.Name}}";
             src = pkgs.fetchurl {
               url = "{{$pkg.URL}}";
-              {{- if $pkg.Sha256 }}
-              sha256 = builtins.getAttr "{{$osArch}}" (builtins.fromJSON ''{{$pkg.Sha256 | toJson }}'');
-              {{- else }}
-              sha256 = pkgs.lib.fakeSha256;  # Will error and show correct hash
-              {{- end }}
+              sha256 = let
+                  shaMap = builtins.fromJSON ''{{$pkg.Sha256 | toJson }}'';
+                in
+                  if builtins.hasAttr "{{$osArch}}" shaMap
+                  then builtins.getAttr "{{$osArch}}" shaMap
+                  else throw "No sha256 found for OS/Arch '{{$osArch}}'. Please add the correct hash to the Sha256 map.";
             };
             nativeBuildInputs = with pkgs; [
               unzip p7zip unrar xz gzip bzip2 zstd lzip
