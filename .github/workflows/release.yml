@@ -57,6 +57,7 @@ jobs:
           buildx_cache: "ghcr.io/${{ github.repository }}:buildx-cache-${{needs.github-release.outputs.sanitized_ref}}"
         run: |+
           docker buildx build -f ./Dockerfile.build \
+            --build-arg VERSION="${{ needs.github-release.outputs.version }}"
             --cache-to type=registry,ref="$buildx_cache",mode=max,compression=zstd,compression-level=13,force-compression=true \
             --cache-from type=registry,ref="$buildx_cache" \
             --cache-from type=registry,ref="$buildx_cache_master" \

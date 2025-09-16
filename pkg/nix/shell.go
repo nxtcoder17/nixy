@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nxtcoder17/nixy/pkg/nix/templates"
 )
@@ -117,7 +118,7 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 		)
 	} else {
 		scripts = append(scripts,
-			fmt.Sprintf("nix develop %s/dev-profile --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, program),
+			fmt.Sprintf("nix develop --offline %s/dev-profile --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, program),
 		)
 	}
 
@@ -145,6 +146,7 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 }
 
 func (n *Nix) Shell(ctx context.Context, program string) error {
+	start := time.Now()
 	cmd, err := n.nixShellExec(ctx, program)
 	if err != nil {
 		return err
@@ -152,7 +154,7 @@ func (n *Nix) Shell(ctx context.Context, program string) error {
 
 	slog.Debug("Executing", "command", cmd.String())
 	defer func() {
-		slog.Debug("Shell Exited")
+		slog.Debug("Shell Exited", "in", fmt.Sprintf("%.2fs", time.Since(start).Seconds()))
 	}()
 
 	if err := cmd.Run(); err != nil {
