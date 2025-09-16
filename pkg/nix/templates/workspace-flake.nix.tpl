@@ -7,7 +7,7 @@
 {{- $projectDir := .WorkspaceDir }}
 {{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 {{- $builds := .Builds -}}
-
+{{- $osArch := .OSArch }}
 {
   description = "nixy project development workspace";
 
@@ -67,11 +67,12 @@
             pname = "{{$pkg.Name}}";
             src = pkgs.fetchurl {
               url = "{{$pkg.URL}}";
-              {{- if $pkg.Sha256 }}
-              sha256 = "{{$pkg.Sha256}}";
-              {{- else }}
-              sha256 = pkgs.lib.fakeSha256;  # Will error and show correct hash
-              {{- end }}
+              sha256 = let
+                  shaMap = builtins.fromJSON ''{{$pkg.Sha256 | toJson }}'';
+                in
+                  if builtins.hasAttr "{{$osArch}}" shaMap
+                  then builtins.getAttr "{{$osArch}}" shaMap
+                  else throw "No sha256 found for OS/Arch '{{$osArch}}'. Please add the correct hash to the Sha256 map.";
             };
             nativeBuildInputs = with pkgs; [
               unzip p7zip unrar xz gzip bzip2 zstd lzip
@@ -143,7 +144,7 @@
                 if [ -d "$filepath" ]; then
                   cp -r $filepath/* $out
                 else
-                  cp -r $filepath $out
+                  cp -r $filepath $out/bin
                 fi
               else
                 cp -r . $out

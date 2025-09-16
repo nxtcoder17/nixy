@@ -3,6 +3,7 @@ package templates
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"text/template"
@@ -36,6 +37,10 @@ func init() {
 			return false
 		},
 		"hasPrefix": strings.HasPrefix,
+		"toJson": func(v any) (string, error) {
+			b, err := json.Marshal(v)
+			return string(b), err
+		},
 	})
 
 	if _, err := t.Parse(profileNixyYamlContent); err != nil {
@@ -60,9 +65,10 @@ func init() {
 
 // copy of pkg/nix.URLPackage
 type URLPackage struct {
-	Name   string `yaml:"name"`
-	URL    string `yaml:"url"`
-	Sha256 string `yaml:"sha256,omitempty"`
+	Name        string            `yaml:"name"`
+	URL         string            `yaml:"url"`
+	RenderedURL string            `yaml:"-"`
+	Sha256      map[string]string `yaml:"sha256,omitempty"`
 }
 
 type WorkspaceFlakeParams struct {
@@ -77,8 +83,7 @@ type WorkspaceFlakeParams struct {
 
 	Builds map[string]WorkspaceFlakePackgeBuild
 
-	UseProfile  bool
-	ProfilePath string
+	OSArch string
 }
 
 type WorkspaceFlakePackgeBuild struct {

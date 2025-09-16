@@ -27,6 +27,8 @@ type Context struct {
 }
 
 type Nix struct {
+	NixyVersion string `yaml:"-"`
+
 	ConfigFile     *string `yaml:"-"`
 	hasHashChanged bool    `yaml:"-"`
 
@@ -140,7 +142,10 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		return nil, err
 	}
 
-	sha256Hash := fmt.Sprintf("%x", sha256.New().Sum(b))
+	hasher := sha256.New()
+	hasher.Write([]byte(os.Getenv("NIXY_VERSION")))
+	hasher.Write(b)
+	sha256Hash := fmt.Sprintf("%x", hasher.Sum(nil))[:7]
 
 	nix.ConfigFile = &f
 
@@ -162,7 +167,8 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 			return nil, fmt.Errorf("failed to read hash file (%s): %w", hashFilePath, err)
 		}
 
-		nix.hasHashChanged = fmt.Sprintf("%x", hash) != sha256Hash
+		slog.Debug("comparing nixy.yml hash", "nixy-file", f, "hash file path", hashFilePath, "hash", string(hash), "sha256hash", sha256Hash)
+		nix.hasHashChanged = string(hash) != sha256Hash
 	}
 
 	if nix.hasHashChanged {
@@ -171,19 +177,37 @@ func LoadFromFile(ctx context.Context, f string) (*Nix, error) {
 		}
 	}
 
+	nixyEnvMap := nix.executorArgs.EnvVars.toMap()
+
 	hasPkgUpdate := false
 	for _, pkg := range nix.Packages {
 		if pkg == nil {
 			continue
 		}
+
 		// Fetch SHA256 if not provided
-		if pkg.URLPackage != nil && pkg.URLPackage.Sha256 == "" {
-			hash, err := fetchURLHash(pkg.URLPackage.URL)
+		if pkg.URLPackage != nil {
+			pkg.URLPackage.RenderedURL = os.Expand(pkg.URLPackage.URL, func(key string) string {
+				if v, ok := nixyEnvMap[key]; ok {
+					return v
+				}
+				return os.Getenv(key)
+			})
+
+			_, hasSha256 := pkg.URLPackage.Sha256[getOSArch()]
+			if hasSha256 {
+				continue
+			}
+
+			hash, err := fetchURLHash(pkg.URLPackage.RenderedURL)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch SHA256 hash for (name: %s, url: %s): %w", pkg.URLPackage.Name, pkg.URLPackage.URL, err)
 			}
 			hasPkgUpdate = true
-			pkg.URLPackage.Sha256 = hash
+			if pkg.URLPackage.Sha256 == nil {
+				pkg.URLPackage.Sha256 = make(map[string]string, 1)
+			}
+			pkg.URLPackage.Sha256[getOSArch()] = hash
 		}
 	}
 
