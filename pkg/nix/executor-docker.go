@@ -19,7 +19,7 @@ func UseDocker(profile *Profile) (*ExecutorArgs, error) {
 
 	dockerCfg := ExecutorArgs{
 		PWD:                          dir,
-		NixBinaryMountedPath:         "/nix/bin/nix",
+		NixBinaryMountedPath:         "/nixy/nix",
 		ProfileDirMountedPath:        "/profile",
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
@@ -35,7 +35,7 @@ func UseDocker(profile *Profile) (*ExecutorArgs, error) {
 			XDGCacheHome:   filepath.Join(fakeHomeMountedPath, ".cache"),
 			XDGDataHome:    filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			Path: []string{
-				"/nix/bin/",
+				"/nixy",
 			},
 			NixyWorkspaceDir:      dir,
 			NixyWorkspaceFlakeDir: "/workspace",
@@ -67,10 +67,17 @@ func (nix *Nix) dockerShell(ctx context.Context, command string, args ...string)
 		// Mount Home
 		"-v", addMount(nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath, "z"),
 		"-e", "HOME=" + nix.executorArgs.FakeHomeMountedPath,
-		"-e", "PATH=/nix/bin",
+		"-e", "PATH=" + strings.Join(nix.executorArgs.EnvVars.Path, ":"),
 
 		// Mount current flake directory
 		"-v", addMount(nix.executorArgs.WorkspaceFlakeDirHostPath, nix.executorArgs.WorkspaceFlakeDirMountedPath, "Z"),
+
+		// STEP: nixy and nix binary mounts
+		"--tmpfs", "/nixy:ro",
+		"--tmpfs", fmt.Sprintf("/bin:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
+		"--tmpfs", fmt.Sprintf("/usr:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
+		"-v", addMount(nixyEnvVars.NixyBinPath, "/nixy/nixy", "ro", "z"),
+		"-v", addMount(nix.profile.StaticNixBinPath, "/nixy/nix", "ro", "z"),
 
 		// STEP: Nix Store
 		"-v", addMount(nix.profile.NixDir, nix.executorArgs.NixDirMountedPath, "z"),

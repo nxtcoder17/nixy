@@ -58,6 +58,22 @@ var nixyEnvVars struct {
 	NixyProfile    string
 	NixyExecutor   Executor
 	NixyUseProfile bool
+	NixyBinPath    string
+}
+
+func getCallerBinPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+
+	// Resolve symlinks and get absolute path
+	exePath, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		panic(err)
+	}
+
+	return exePath
 }
 
 func init() {
@@ -79,6 +95,8 @@ func init() {
 	} else {
 		nixyEnvVars.NixyUseProfile = false
 	}
+
+	nixyEnvVars.NixyBinPath = getCallerBinPath()
 }
 
 type ExecutorArgs struct {

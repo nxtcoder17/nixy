@@ -36,7 +36,7 @@ func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
 			XDGCacheHome:   filepath.Join(fakeHomeMountedPath, ".cache"),
 			XDGDataHome:    filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			Path: []string{
-				filepath.Dir(profile.StaticNixBinPath),
+				"/nixy",
 			},
 			NixyShell:             "true",
 			NixyWorkspaceDir:      dir,
@@ -86,6 +86,13 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...str
 		// mounts terminfo file, so that your cli tools know and behave according to it
 		"--ro-bind", nix.executorArgs.EnvVars.TermInfo, nix.executorArgs.EnvVars.TermInfo,
 
+		// nixy and nix binary mounts
+		"--tmpfs", "/nixy",
+		"--tmpfs", "/bin",
+		"--tmpfs", "/usr",
+		"--ro-bind", nix.profile.StaticNixBinPath, "/nixy/nix",
+		"--ro-bind", nixyEnvVars.NixyBinPath, "/nixy/nixy",
+
 		// STEP: read-write binds
 		"--ro-bind", nix.profile.ProfilePath, nix.executorArgs.ProfileDirMountedPath,
 
@@ -96,7 +103,6 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...str
 
 		// Nix Store for nixy bubblewrap shell
 		"--bind", nix.profile.NixDir, nix.executorArgs.NixDirMountedPath,
-		"--bind", nix.profile.StaticNixBinPath, nix.profile.StaticNixBinPath,
 
 		// Current Working Directory as it is
 		"--bind", nix.executorArgs.PWD, nix.executorArgs.PWD,
