@@ -19,6 +19,25 @@ nixy shell
 nixy build <build-name>
 ```
 
+## Auto Jump into nixy shell
+
+<details>
+<summary>Fish Shell</summary>
+
+### Add the following code at the end of your fish config
+```fish
+function _auto_nixy_shell --on-variable PWD
+    if test -f nixy.yml
+        if test -z "$NIXY_SHELL"
+          nixy shell
+        end
+    end
+end
+
+_auto_nixy_shell
+```
+</details>
+
 ## Installation
 
 ### Pre-built Binary (Recommended)
@@ -334,6 +353,7 @@ MIT
 Built with ❤️ using:
 - [Nix](https://nixos.org/) - The powerful package manager
 - [Go](https://golang.org/) - The programming language
+- [bubblewrap](https://github.com/containers/bubblewrap) - Unprivileged Sandboxing tool
 
 ---
 
