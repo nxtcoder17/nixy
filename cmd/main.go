@@ -28,23 +28,10 @@ func main() {
 
 	os.Setenv("NIXY_VERSION", Version)
 
-	cmd := cli.Command{
-		Name:        "nixy",
-		Version:     Version,
-		Description: "An approachable nix based development workspace setup tool",
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:     "debug",
-				Usage:    "--debug",
-				Required: false,
-				Value:    false,
-			},
-		},
+	var commands []*cli.Command
 
-		// ShellCompletionCommandName: "completion:shell",
-		EnableShellCompletion: true,
-
-		Commands: []*cli.Command{
+	if _, ok := os.LookupEnv("NIXY_SHELL"); !ok {
+		commands = []*cli.Command{
 			{
 				Name:    "init",
 				Suggest: true,
@@ -148,7 +135,7 @@ func main() {
 						return err
 					}
 
-					if err := n.Shell(ctx, strings.Join(c.Args().Slice(), " ")); err != nil {
+					if err := n.Shell(n.Context, strings.Join(c.Args().Slice(), " ")); err != nil {
 						return err
 					}
 
@@ -164,6 +151,25 @@ func main() {
 						return err
 					}
 
+					if err := n.Build(n.Context, c.Args().First()); err != nil {
+						return err
+					}
+
+					return nil
+				},
+			},
+		}
+	} else {
+		commands = []*cli.Command{
+			{
+				Name:    "build",
+				Suggest: true,
+				Action: func(ctx context.Context, c *cli.Command) error {
+					n, err := nix.LoadInNixyShell(ctx)
+					if err != nil {
+						return err
+					}
+
 					if err := n.Build(ctx, c.Args().First()); err != nil {
 						return err
 					}
@@ -171,7 +177,26 @@ func main() {
 					return nil
 				},
 			},
+		}
+	}
+
+	cmd := cli.Command{
+		Name:        "nixy",
+		Version:     Version,
+		Description: "An approachable nix based development workspace setup tool",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:     "debug",
+				Usage:    "--debug",
+				Required: false,
+				Value:    false,
+			},
 		},
+
+		// ShellCompletionCommandName: "completion:shell",
+		EnableShellCompletion: true,
+
+		Commands: commands,
 
 		Suggest: true,
 	}
@@ -189,7 +214,7 @@ func main() {
 	}
 }
 
-func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nix.Nix, error) {
+func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nix.Nixy, error) {
 	logger := fastlog.New(fastlog.Options{
 		Writer:        os.Stderr,
 		Format:        fastlog.ConsoleFormat,

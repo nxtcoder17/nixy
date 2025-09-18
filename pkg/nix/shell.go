@@ -24,18 +24,18 @@ const (
 	BuildHookFileName = "build-hook.sh"
 )
 
-func (nix *Nix) writeWorkspaceFlake(ctx context.Context) error {
+func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 	shouldGenerate := false
 
 	input := WorkspaceFlakeGenParams{
 		NixPkgsDefaultCommit: nix.NixPkgs,
-		WorkspaceDirPath:     nix.executorArgs.PWD,
+		WorkspaceDirPath:     ctx.PWD,
 		Packages:             []*NormalizedPackage{},
 		Libraries:            []string{},
 		Builds:               map[string]Build{},
 	}
 
-	if nixyEnvVars.NixyUseProfile {
+	if ctx.NixyUseProfile {
 		profileNix, err := LoadFromFile(ctx, nix.profile.ProfileNixyYAMLPath)
 		if err != nil {
 			return fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
@@ -62,8 +62,7 @@ func (nix *Nix) writeWorkspaceFlake(ctx context.Context) error {
 	}
 
 	shellHook, err := templates.RenderShellHook(templates.ShellHookParams{
-		EnvVars:   nix.executorArgs.EnvVars.toMap(),
-		ShellHook: nix.ShellHook,
+		OnShellEnter: nix.OnShellEnter,
 	})
 	if err != nil {
 		return err
@@ -81,7 +80,7 @@ func (nix *Nix) writeWorkspaceFlake(ctx context.Context) error {
 	return os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "flake.nix"), flake, 0o644)
 }
 
-func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, error) {
+func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	if err := n.writeWorkspaceFlake(ctx); err != nil {
 		return nil, err
 	}
@@ -100,7 +99,7 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 
 	scripts := []string{}
 
-	for k, v := range n.executorArgs.EnvVars.toMap() {
+	for k, v := range n.executorArgs.EnvVars.toMap(ctx) {
 		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
 	}
 
@@ -145,7 +144,7 @@ func (n *Nix) nixShellExec(ctx context.Context, program string) (*exec.Cmd, erro
 	return cmd, nil
 }
 
-func (n *Nix) Shell(ctx context.Context, program string) error {
+func (n *Nixy) Shell(ctx *Context, program string) error {
 	start := time.Now()
 	cmd, err := n.nixShellExec(ctx, program)
 	if err != nil {

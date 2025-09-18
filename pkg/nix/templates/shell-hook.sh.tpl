@@ -1,5 +1,6 @@
 {{- define "shell-hook" }}
 
-{{- $shellHook := .ShellHook }}
-{{$shellHook}}
+{{- $onShellEnter := .OnShellEnter }}
+{{- $onShellEnter }}
+
 {{- end }}

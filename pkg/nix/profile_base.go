@@ -1,7 +1,6 @@
 package nix
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,8 +21,16 @@ type Profile struct {
 	ProfileNixyYAMLPath string
 }
 
-func GetProfile(name string) (*Profile, error) {
-	b, err := os.ReadFile(filepath.Join(XDGDataDir(), "profiles", name, "profile.json"))
+var (
+	ProfileSandboxMountPath        string = "/profile"
+	WorkspaceDirSandboxMountPath   string = "/workspace"
+	WorkspaceFlakeSandboxMountPath string = "/workspace-flake"
+)
+
+func GetProfile(ctx *Context, name string) (*Profile, error) {
+	profileJSONPath := filepath.Join(XDGDataDir(), "profiles", name, "profile.json")
+
+	b, err := os.ReadFile(profileJSONPath)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +45,8 @@ func GetProfile(name string) (*Profile, error) {
 }
 
 // NewProfile creates a new profile instance
-func NewProfile(ctx context.Context, name string) (*Profile, error) {
-	if v, err := GetProfile(name); err == nil {
+func NewProfile(ctx *Context, name string) (*Profile, error) {
+	if v, err := GetProfile(ctx, name); err == nil {
 		return v, nil
 	}
 

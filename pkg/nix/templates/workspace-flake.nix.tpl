@@ -229,15 +229,17 @@
             unpackPhase = ":";
 
             installPhase = ''
-              mkdir -p $out
+              mkdir -p "$out"
 
               shopt -s extglob
               for item in $src; do
                 if [ -d "$item" ]; then
                   # INFO: stripHash just removes nix hash part from the given name
+                  echo "[#] copying dir: $item"
                   result=$(stripHash "$item" )
                   cp -r "$item"/!(share) $out
                 else
+                  echo "[#] copying file: $item"
                   result=$(stripHash "$item" )
                   cp "$item" $out/$(stripHash "$item")
                 fi

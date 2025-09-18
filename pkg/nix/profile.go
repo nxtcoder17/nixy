@@ -34,16 +34,27 @@ func ProfileList(ctx context.Context) ([]string, error) {
 
 // ProfileCreate creates a new profile with the given name
 func ProfileCreate(ctx context.Context, name string) error {
-	_, err := NewProfile(ctx, name)
+	nixyCtx, err := NewContext(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	_, err = NewProfile(nixyCtx, name)
 	return err
 }
 
 // ProfileEdit opens the profile's flake.nix in the user's editor
 func ProfileEdit(ctx context.Context, name string) error {
-	if name == "" {
-		name = nixyEnvVars.NixyProfile
+	nixyCtx, err := NewContext(ctx, "")
+	if err != nil {
+		return err
 	}
-	profile, err := NewProfile(ctx, name)
+
+	if name == "" {
+		name = nixyCtx.NixyProfile
+	}
+
+	profile, err := NewProfile(nixyCtx, name)
 	if err != nil {
 		return err
 	}

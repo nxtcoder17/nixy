@@ -1,7 +1,6 @@
 package nix
 
 import (
-	"context"
 	"crypto/md5"
 	"errors"
 	"fmt"
@@ -15,7 +14,7 @@ func deriveWorkspacePath(workspacesDir, cwd string) string {
 	return filepath.Join(workspacesDir, fmt.Sprintf("%x-%s", sum, filepath.Base(cwd)))
 }
 
-func UseLocal(profile *Profile) (*ExecutorArgs, error) {
+func UseLocal(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 	nixPath, err := exec.LookPath("nix")
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
@@ -23,15 +22,9 @@ func UseLocal(profile *Profile) (*ExecutorArgs, error) {
 		}
 	}
 
-	dir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
-	wsHostPath := deriveWorkspacePath(profile.WorkspacesDir, dir)
+	wsHostPath := deriveWorkspacePath(profile.WorkspacesDir, ctx.PWD)
 
 	return &ExecutorArgs{
-		PWD:                          dir,
 		NixBinaryMountedPath:         nixPath,
 		ProfileDirMountedPath:        profile.ProfilePath,
 		FakeHomeMountedPath:          profile.FakeHomeDir,
@@ -39,23 +32,26 @@ func UseLocal(profile *Profile) (*ExecutorArgs, error) {
 		WorkspaceFlakeDirHostPath:    wsHostPath,
 		WorkspaceFlakeDirMountedPath: wsHostPath,
 
-		EnvVars: ExecutorEnvVars{
+		EnvVars: executorEnvVars{
 			User:     os.Getenv("USER"),
 			Home:     profile.FakeHomeDir,
 			Term:     os.Getenv("TERM"),
 			TermInfo: os.Getenv("TERMINFO"),
 
-			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
-			XDGCacheHome:          filepath.Join(profile.FakeHomeDir, ".cache"),
-			XDGDataHome:           filepath.Join(profile.FakeHomeDir, ".local", "share"),
-			Path:                  []string{filepath.Dir(nixPath)},
-			NixyWorkspaceDir:      dir,
-			NixyWorkspaceFlakeDir: dir,
+			XDGSessionType: os.Getenv("XDG_SESSION_TYPE"),
+			XDGCacheHome:   filepath.Join(profile.FakeHomeDir, ".cache"),
+			XDGDataHome:    filepath.Join(profile.FakeHomeDir, ".local", "share"),
+			Path: []string{
+				filepath.Dir(ctx.NixyBinPath),
+				filepath.Dir(nixPath),
+			},
+			NixyWorkspaceDir:      ctx.PWD,
+			NixyWorkspaceFlakeDir: ctx.PWD,
 			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
 		},
 	}, nil
 }
 
-func (nix *Nix) localShell(ctx context.Context, command string, args ...string) (*exec.Cmd, error) {
+func (nix *Nixy) localShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	return exec.CommandContext(ctx, command, args...), nil
 }
