@@ -20,6 +20,10 @@ const (
 	BubbleWrapExecutor Mode = "bubblewrap"
 )
 
+func (m Mode) String() string {
+	return string(m)
+}
+
 type NixyConfig struct {
 	NixPkgs   string               `yaml:"nixpkgs"`
 	Packages  []*NormalizedPackage `yaml:"packages"`
@@ -44,7 +48,6 @@ type Nixy struct {
 	sync.Mutex     `yaml:"-"`
 	Logger         *slog.Logger `yaml:"-"`
 	profile        *Profile     `yaml:"-"`
-	cwd            string       `yaml:"-"`
 
 	PWD string
 
@@ -123,7 +126,7 @@ func LoadFromFile(parent context.Context, f string) (*Nixy, error) {
 
 		profile:    profile,
 		Logger:     slog.Default(),
-		cwd:        dir,
+		PWD:        dir,
 		NixyConfig: NixyConfig{},
 	}
 
@@ -149,12 +152,9 @@ func LoadFromFile(parent context.Context, f string) (*Nixy, error) {
 		return nil, err
 	}
 
-	if ctx.InNixyShell {
-		return &nixy, nil
-	}
-
 	hasher := sha256.New()
 	hasher.Write([]byte(os.Getenv("NIXY_VERSION")))
+	hasher.Write([]byte(ctx.NixyMode))
 	hasher.Write(b)
 	sha256Hash := fmt.Sprintf("%x", hasher.Sum(nil))[:7]
 

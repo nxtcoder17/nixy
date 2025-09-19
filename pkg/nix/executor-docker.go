@@ -16,7 +16,7 @@ func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 		ProfileDirMountedPath:        "/profile",
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
-		WorkspaceFlakeDirMountedPath: "/workspace",
+		WorkspaceFlakeDirMountedPath: WorkspaceFlakeSandboxMountPath,
 		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, ctx.PWD),
 
 		EnvVars: executorEnvVars{
@@ -31,7 +31,7 @@ func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 				"/nixy",
 			},
 			NixyWorkspaceDir:      ctx.PWD,
-			NixyWorkspaceFlakeDir: "/workspace",
+			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
 			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
 		},
 	}
@@ -72,6 +72,7 @@ func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*ex
 
 		// STEP: project dir
 		"-v", addMount(nixy.PWD, nixy.PWD, "Z"),
+		"-v", addMount(nixy.PWD, WorkspaceDirSandboxMountPath, "Z"),
 
 		// STEP: mounts terminfo file, so that your cli tools know and behave according to it
 		"-v", addMount(nixy.executorArgs.EnvVars.TermInfo, nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),

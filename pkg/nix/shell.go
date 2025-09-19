@@ -111,13 +111,19 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceFlakeDirMountedPath),
 	)
 
-	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, "dev-profile")) {
+	if err := os.MkdirAll(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, "flake-profiles"), 0o644); err != nil {
+		return nil, err
+	}
+
+	nixFlakeProfileName := filepath.Join("flake-profiles", ctx.NixyMode.String())
+
+	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, nixFlakeProfileName)) {
 		scripts = append(scripts,
-			fmt.Sprintf("nix develop --profile %s/dev-profile --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, program),
+			fmt.Sprintf("nix develop --profile ./%s --command %s", nixFlakeProfileName, program),
 		)
 	} else {
 		scripts = append(scripts,
-			fmt.Sprintf("nix develop --offline %s/dev-profile --command %s", n.executorArgs.WorkspaceFlakeDirMountedPath, program),
+			fmt.Sprintf("nix develop --offline ./%s --command %s", nixFlakeProfileName, program),
 		)
 	}
 
