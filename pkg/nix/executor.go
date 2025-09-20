@@ -1,7 +1,6 @@
 package nix
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,21 +18,21 @@ func XDGDataDir() string {
 	return filepath.Join(xdgDataHome, "nixy")
 }
 
-func (nix *Nix) PrepareShellCommand(ctx context.Context, command string, args ...string) (*exec.Cmd, error) {
-	switch nix.executor {
+func (nixy *Nixy) PrepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+	switch ctx.NixyMode {
 	case LocalExecutor:
-		return nix.localShell(ctx, command, args...)
+		return nixy.localShell(ctx, command, args...)
 	case DockerExecutor:
-		return nix.dockerShell(ctx, command, args...)
+		return nixy.dockerShell(ctx, command, args...)
 	case BubbleWrapExecutor:
-		return nix.bubblewrapShell(ctx, command, args...)
+		return nixy.bubblewrapShell(ctx, command, args...)
 	default:
-		return nil, fmt.Errorf("unknown executor: %s, only local and docker executors are supported", nix.executor)
+		return nil, fmt.Errorf("unknown executor: %s, only local and docker executors are supported", ctx.NixyMode)
 
 	}
 }
 
-type ExecutorEnvVars struct {
+type executorEnvVars struct {
 	User     string `json:"USER"`
 	Home     string `json:"HOME"`
 	Term     string `json:"TERM"`
@@ -59,8 +58,8 @@ type ExecutorEnvVars struct {
 	NixConfDir            string `json:"NIX_CONF_DIR"`
 }
 
-func (e *ExecutorEnvVars) toMap() map[string]string {
-	return map[string]string{
+func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
+	m := map[string]string{
 		"USER":     e.User,
 		"HOME":     e.Home,
 		"TERM":     e.Term,
@@ -86,21 +85,26 @@ func (e *ExecutorEnvVars) toMap() map[string]string {
 			}
 		}(),
 
-		"NIXY_EXECUTOR":    string(nixyEnvVars.NixyExecutor),
-		"NIXY_PROFILE":     nixyEnvVars.NixyProfile,
-		"NIXY_USE_PROFILE": fmt.Sprintf("%v", nixyEnvVars.NixyUseProfile),
+		"NIXY_EXECUTOR":    string(ctx.NixyMode),
+		"NIXY_PROFILE":     ctx.NixyProfile,
+		"NIXY_USE_PROFILE": fmt.Sprintf("%v", ctx.NixyUseProfile),
 
 		"NIXY_SHELL":               "true",
 		"PATH":                     strings.Join(e.Path, ":"),
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,
 		"NIXY_WORKSPACE_FLAKE_DIR": e.NixyWorkspaceFlakeDir,
 		"NIXY_BUILD_HOOK":          e.NixyBuildHook,
-		"NIX_CONF_DIR":             e.NixConfDir,
 	}
+
+	if e.NixConfDir != "" {
+		m["NIX_CONF_DIR"] = e.NixConfDir
+	}
+
+	return m
 }
 
-func (e *ExecutorEnvVars) ToEnviron() []string {
-	m := e.toMap()
+func (e *executorEnvVars) ToEnviron(ctx *Context) []string {
+	m := e.toMap(ctx)
 	result := make([]string, 0, len(m))
 
 	for k, v := range m {

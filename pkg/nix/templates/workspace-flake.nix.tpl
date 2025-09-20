@@ -171,9 +171,9 @@
               export LANG="en_US.UTF-8"
             fi
 
-            if [ ! -e "/usr" ]; then
+            if [ ! -e "/usr/bin" ]; then
               # INFO: this ensures, we always have /usr/bin/env
-              ln -sf ${pkgs.coreutils} /usr
+              ln -sf ${pkgs.coreutils}/* /usr
             fi
 
             # INFO: it seems like many tools have hardcoded value for /bin/sh, so we need to make sure that /bin/sh exists
@@ -229,15 +229,17 @@
             unpackPhase = ":";
 
             installPhase = ''
-              mkdir -p $out
+              mkdir -p "$out"
 
               shopt -s extglob
               for item in $src; do
                 if [ -d "$item" ]; then
                   # INFO: stripHash just removes nix hash part from the given name
+                  echo "[#] copying dir: $item"
                   result=$(stripHash "$item" )
                   cp -r "$item"/!(share) $out
                 else
+                  echo "[#] copying file: $item"
                   result=$(stripHash "$item" )
                   cp "$item" $out/$(stripHash "$item")
                 fi

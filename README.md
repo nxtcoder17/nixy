@@ -26,15 +26,35 @@ nixy build <build-name>
 
 ### Add the following code at the end of your fish config
 ```fish
-function _auto_nixy_shell --on-variable PWD
-    if test -f nixy.yml
-        if test -z "$NIXY_SHELL"
-          nixy shell
-        end
-    end
+function __nixy_shell_activate --on-variable PWD
+  if not status is-interactive
+    return
+  end
+
+  if test -n "$NIXY_SHELL"
+    return
+  end
+
+  if not test -e nixy.yml
+    return
+  end
+
+  set value (fzf --reverse --prompt "Load nixy shell ? " < (printf "YES\nNO" | psub))
+
+  if test -z $value
+    set value "YES"
+  end
+
+  if test "$value" = "NO"
+    return
+  end
+
+  exec nixy shell
 end
 
-_auto_nixy_shell
+if status is-interactive
+  __nixy_shell_activate
+end
 ```
 </details>
 
