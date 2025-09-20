@@ -39,7 +39,7 @@ function __nixy_shell_activate --on-variable PWD
     return
   end
 
-  set value (fzf --reverse --prompt "Load nixy shell ? " < (printf "YES\nNO" | psub))
+  set value (fzf --reverse --prompt "Enter nixy shell ? " < (printf "YES\nNO" | psub))
 
   if test -z $value
     set value "YES"
@@ -90,7 +90,7 @@ libraries:      # System libraries
   - zlib
   - openssl
 
-shellHook: |    # Shell initialization
+onShellEnter: |    # Shell initialization
   echo "Welcome to your dev environment!"
 ```
 
@@ -211,7 +211,7 @@ All execution backends provide pure, reproducible environments with:
 
 ### 🎨 Environment Customization
 ```yaml
-shellHook: |
+onShellEnter: |
   export EDITOR=vim
   alias ll='ls -la'
   echo "Environment ready!"
@@ -296,7 +296,7 @@ packages:
   - name: k9s
     url: https://github.com/derailed/k9s/releases/download/v0.27.4/k9s_Linux_amd64.tar.gz
 
-shellHook: |
+onShellEnter: |
   export KUBECONFIG=$HOME/.kube/config
 ```
 
@@ -325,7 +325,7 @@ env:
   KEY: value
 
 # Shell initialization
-shellHook: |
+onShellEnter: |
   <bash commands>
 
 # Build targets
