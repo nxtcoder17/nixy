@@ -1,7 +1,6 @@
 package nix
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,24 +9,18 @@ import (
 	"path/filepath"
 )
 
-func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
+func UseBubbleWrap(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 	fakeHomeMountedPath := "/home/nixy"
 
 	bwrap := ExecutorArgs{
-		PWD:                          dir,
 		NixBinaryMountedPath:         "/nix/bin/nix",
 		ProfileDirMountedPath:        "/profile",
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
-		WorkspaceFlakeDirMountedPath: "/workspace",
-		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, dir),
+		WorkspaceFlakeDirMountedPath: WorkspaceFlakeSandboxMountPath,
+		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, ctx.PWD),
 
-		EnvVars: ExecutorEnvVars{
+		EnvVars: executorEnvVars{
 			User:           "nixy",
 			Home:           fakeHomeMountedPath,
 			Term:           os.Getenv("TERM"),
@@ -36,11 +29,11 @@ func UseBubbleWrap(profile *Profile) (*ExecutorArgs, error) {
 			XDGCacheHome:   filepath.Join(fakeHomeMountedPath, ".cache"),
 			XDGDataHome:    filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			Path: []string{
-				filepath.Dir(profile.StaticNixBinPath),
+				"/nixy",
 			},
 			NixyShell:             "true",
-			NixyWorkspaceDir:      dir,
-			NixyWorkspaceFlakeDir: "/workspace",
+			NixyWorkspaceDir:      ctx.PWD,
+			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
 			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
 		},
 	}
@@ -59,7 +52,7 @@ func exists(path string) bool {
 	return false
 }
 
-func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...string) (*exec.Cmd, error) {
+func (nixy *Nixy) bubblewrapShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	bwrapArgs := []string{
 		// no-zombie processes
 		"--die-with-parent",
@@ -84,26 +77,35 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...str
 		"--ro-bind", "/etc", "/etc",
 
 		// mounts terminfo file, so that your cli tools know and behave according to it
-		"--ro-bind", nix.executorArgs.EnvVars.TermInfo, nix.executorArgs.EnvVars.TermInfo,
+		"--ro-bind", nixy.executorArgs.EnvVars.TermInfo, nixy.executorArgs.EnvVars.TermInfo,
+
+		// nixy and nix binary mounts
+		"--tmpfs", "/nixy",
+		"--tmpfs", "/bin",
+		"--tmpfs", "/usr",
+		"--ro-bind", nixy.profile.StaticNixBinPath, "/nixy/nix",
+		"--ro-bind", ctx.NixyBinPath, "/nixy/nixy",
 
 		// STEP: read-write binds
-		"--ro-bind", nix.profile.ProfilePath, nix.executorArgs.ProfileDirMountedPath,
+		"--ro-bind", nixy.profile.ProfilePath, nixy.executorArgs.ProfileDirMountedPath,
 
 		// Custom User Home for nixy BubbleWrap shell
-		"--bind", nix.profile.FakeHomeDir, nix.executorArgs.FakeHomeMountedPath,
-		"--setenv", "HOME", nix.executorArgs.FakeHomeMountedPath,
-		"--bind", nix.executorArgs.WorkspaceFlakeDirHostPath, nix.executorArgs.WorkspaceFlakeDirMountedPath,
+		"--bind", nixy.profile.FakeHomeDir, nixy.executorArgs.FakeHomeMountedPath,
+		"--setenv", "HOME", nixy.executorArgs.FakeHomeMountedPath,
+		"--bind", nixy.executorArgs.WorkspaceFlakeDirHostPath, nixy.executorArgs.WorkspaceFlakeDirMountedPath,
 
 		// Nix Store for nixy bubblewrap shell
-		"--bind", nix.profile.NixDir, nix.executorArgs.NixDirMountedPath,
-		"--bind", nix.profile.StaticNixBinPath, nix.profile.StaticNixBinPath,
+		"--bind", nixy.profile.NixDir, nixy.executorArgs.NixDirMountedPath,
 
 		// Current Working Directory as it is
-		"--bind", nix.executorArgs.PWD, nix.executorArgs.PWD,
+		"--bind", ctx.PWD, ctx.PWD,
+
+		// INFO: it is just to keep the workspace at /workspace in the sandbox
+		"--bind", ctx.PWD, WorkspaceDirSandboxMountPath,
 		"--clearenv",
 	}
 
-	envMap := nix.executorArgs.EnvVars.toMap()
+	envMap := nixy.executorArgs.EnvVars.toMap(ctx)
 	for k, v := range envMap {
 		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
 	}
@@ -111,8 +113,8 @@ func (nix *Nix) bubblewrapShell(ctx context.Context, command string, args ...str
 	bwrapArgs = append(bwrapArgs, command)
 	bwrapArgs = append(bwrapArgs, args...)
 
-	if !exists(nix.profile.StaticNixBinPath) {
-		if err := downloadStaticNixBinary(ctx, nix.profile.StaticNixBinPath); err != nil {
+	if !exists(nixy.profile.StaticNixBinPath) {
+		if err := downloadStaticNixBinary(ctx, nixy.profile.StaticNixBinPath); err != nil {
 			return nil, err
 		}
 	}

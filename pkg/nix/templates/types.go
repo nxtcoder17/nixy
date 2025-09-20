@@ -114,8 +114,7 @@ func RenderProfileNixyYAML(values ProfileNixyYAMLParams) ([]byte, error) {
 }
 
 type ShellHookParams struct {
-	EnvVars   map[string]string
-	ShellHook string
+	OnShellEnter string
 }
 
 func RenderShellHook(params ShellHookParams) ([]byte, error) {
