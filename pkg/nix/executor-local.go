@@ -47,7 +47,7 @@ func UseLocal(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 			},
 			NixyWorkspaceDir:      ctx.PWD,
 			NixyWorkspaceFlakeDir: ctx.PWD,
-			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
+			NixConfDir:            "",
 		},
 	}, nil
 }

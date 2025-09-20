@@ -93,10 +93,6 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 		}
 	}
 
-	if n.executorArgs.EnvVars.NixConfDir == "" {
-		n.executorArgs.EnvVars.NixConfDir = n.executorArgs.ProfileDirMountedPath
-	}
-
 	scripts := []string{}
 
 	for k, v := range n.executorArgs.EnvVars.toMap(ctx) {
@@ -111,14 +107,11 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceFlakeDirMountedPath),
 	)
 
-	if err := os.MkdirAll(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, "flake-profiles"), 0o644); err != nil {
-		return nil, err
-	}
-
-	nixFlakeProfileName := filepath.Join("flake-profiles", ctx.NixyMode.String())
+	nixFlakeProfileName := "flake.profile"
 
 	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, nixFlakeProfileName)) {
 		scripts = append(scripts,
+			fmt.Sprintf("nix profile wipe-history --profile ./%s", nixFlakeProfileName),
 			fmt.Sprintf("nix develop --profile ./%s --command %s", nixFlakeProfileName, program),
 		)
 	} else {

@@ -59,7 +59,7 @@ type executorEnvVars struct {
 }
 
 func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
-	return map[string]string{
+	m := map[string]string{
 		"USER":     e.User,
 		"HOME":     e.Home,
 		"TERM":     e.Term,
@@ -94,8 +94,13 @@ func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,
 		"NIXY_WORKSPACE_FLAKE_DIR": e.NixyWorkspaceFlakeDir,
 		"NIXY_BUILD_HOOK":          e.NixyBuildHook,
-		"NIX_CONF_DIR":             e.NixConfDir,
 	}
+
+	if e.NixConfDir != "" {
+		m["NIX_CONF_DIR"] = e.NixConfDir
+	}
+
+	return m
 }
 
 func (e *executorEnvVars) ToEnviron(ctx *Context) []string {

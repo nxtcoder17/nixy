@@ -83,7 +83,7 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 	cmd.Stderr = os.Stderr
 
 	slog.Debug("Build Started")
-	slog.Info(fmt.Sprintf("[Build %s] Executing", target), "command", cmd.String())
+	slog.Debug(fmt.Sprintf("[Build %s] Executing", target), "command", cmd.String())
 
 	defer func() {
 		slog.Debug("Build Finished")
@@ -92,6 +92,7 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 	if err := cmd.Run(); err != nil {
 		return err
 	}
+
 
 	return nil
 }
