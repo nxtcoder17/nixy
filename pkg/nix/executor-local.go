@@ -34,7 +34,7 @@ func UseLocal(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 
 		EnvVars: executorEnvVars{
 			User:     os.Getenv("USER"),
-			Home:     profile.FakeHomeDir,
+			Home:     os.Getenv("HOME"),
 			Term:     os.Getenv("TERM"),
 			TermInfo: os.Getenv("TERMINFO"),
 
@@ -46,7 +46,7 @@ func UseLocal(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 				filepath.Dir(nixPath),
 			},
 			NixyWorkspaceDir:      ctx.PWD,
-			NixyWorkspaceFlakeDir: ctx.PWD,
+			NixyWorkspaceFlakeDir: wsHostPath,
 			NixConfDir:            "",
 		},
 	}, nil

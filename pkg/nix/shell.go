@@ -25,8 +25,6 @@ const (
 )
 
 func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
-	shouldGenerate := false
-
 	input := WorkspaceFlakeGenParams{
 		NixPkgsDefaultCommit: nix.NixPkgs,
 		WorkspaceDirPath:     ctx.PWD,
@@ -40,19 +38,18 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
 		}
-		shouldGenerate = profileNix.hasHashChanged
+		nix.hasHashChanged = profileNix.hasHashChanged
 		input.Packages = append(input.Packages, profileNix.Packages...)
 		input.Libraries = append(input.Libraries, profileNix.Libraries...)
 	}
 
 	if nix.hasHashChanged {
-		shouldGenerate = true
 		input.Packages = append(input.Packages, nix.Packages...)
 		input.Libraries = append(input.Libraries, nix.Libraries...)
 		maps.Copy(input.Builds, nix.Builds)
 	}
 
-	if !shouldGenerate {
+	if !nix.hasHashChanged {
 		return nil
 	}
 

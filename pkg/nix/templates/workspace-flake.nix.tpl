@@ -18,11 +18,13 @@
     {{- range $_, $v := $nixpkgsList }}
     nixpkgs_{{slice $v 0 7}}.url = "github:nixos/nixpkgs/{{$v}}";
     {{- end }}
+
+    nixpkgs-unstable.follows = "nixpkgs";
   };
 
   outputs = {
       self, nixpkgs, flake-utils,
-
+      nixpkgs-unstable,
       {{- range $_, $v := $nixpkgsList -}}
       nixpkgs_{{slice $v 0 7}},
       {{- end }}

@@ -263,7 +263,7 @@ func (nixy *Nixy) SyncToDisk() error {
 
 	nixy.Packages = upkg
 
-	b, err := yaml.Marshal(nixy)
+	b, err := yaml.Marshal(nixy.NixyConfig)
 	if err != nil {
 		return err
 	}
