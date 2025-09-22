@@ -128,7 +128,7 @@ env:
 Built-in environment variables available:
 - `NIXY_OS` - Operating system (e.g., linux, darwin)
 - `NIXY_ARCH` - Architecture (e.g., amd64, arm64)
-- `NIXY_FULL_ARCH` - Full architecture string (e.g., x86_64)
+- `NIXY_ARCH_FULL` - Full architecture string (e.g., x86_64)
 
 ### 🔧 Build System
 Define reproducible builds:
