@@ -44,15 +44,14 @@
         {{- end }}
 
         packages = [
-          (pkgs.lib.optionals pkgs.stdenv.isLinux [
-            pkgs.glibcLocales
-          ]) ++ [
             {{- range $k, $v := $packagesMap }}
             {{- range $item := $v }}
             pkgs_{{slice $k 0 7}}.{{$item}}
             {{- end }}
             {{- end }}
-          ];
+          ]
+          ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.glibcLocales ]) 
+          ;
 
         libraries = pkgs.lib.makeLibraryPath [
           {{- range $k, $v := $librariesMap }}
@@ -169,9 +168,12 @@
 
           shellHook = ''
             {{- /* INFO: because glibcLocales is a linux only package, and causes nixy shell to break on macos */}}
-            ${pkgs.lib.optionals pkgs.stdenv.isLinux ''
-              export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
-            ''}
+
+            ${
+              if pkgs.stdenv.isLinux
+              then ''export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive''
+              else ''''
+            }
 
             if [ -z "$LANG" ]; then
               # INFO: if LANG env var unset, set it to en_US.UTF-8
