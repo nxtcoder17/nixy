@@ -38,7 +38,7 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
 		}
-		nix.hasHashChanged = profileNix.hasHashChanged
+		nix.hasHashChanged = nix.hasHashChanged || profileNix.hasHashChanged
 		input.Packages = append(input.Packages, profileNix.Packages...)
 		input.Libraries = append(input.Libraries, profileNix.Libraries...)
 	}
@@ -50,6 +50,7 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 	}
 
 	if !nix.hasHashChanged {
+		slog.Debug("nixy.yml hash has not changed, skipped writing flake.nix")
 		return nil
 	}
 
@@ -65,6 +66,7 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 		return err
 	}
 
+	slog.Debug("writing shell-hook.sh")
 	if err := os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "shell-hook.sh"), []byte(shellHook), 0o744); err != nil {
 		return fmt.Errorf("failed to write shell-hook.sh: %w", err)
 	}
@@ -74,6 +76,7 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 		return fmt.Errorf("failed to render flake.nix: %w", err)
 	}
 
+	slog.Debug("writing flake.nix")
 	return os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "flake.nix"), flake, 0o644)
 }
 
@@ -109,13 +112,15 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, nixFlakeProfileName)) {
 		scripts = append(scripts,
 			fmt.Sprintf("nix profile wipe-history --profile ./%s", nixFlakeProfileName),
-			fmt.Sprintf("nix develop --profile ./%s --command %s", nixFlakeProfileName, program),
-		)
-	} else {
-		scripts = append(scripts,
-			fmt.Sprintf("nix develop --offline ./%s --command %s", nixFlakeProfileName, program),
+			fmt.Sprintf("nix develop --profile ./%s --command echo ''", nixFlakeProfileName),
+
+			// [READ about nix print-dev-env](https://nix.dev/manual/nix/2.18/command-ref/new-cli/nix3-print-dev-env)
+			fmt.Sprintf("nix print-dev-env ./%s > shell-init.sh", nixFlakeProfileName),
 		)
 	}
+
+	scripts = append(scripts, "source shell-init.sh")
+	scripts = append(scripts, program)
 
 	nixShell := []string{
 		"shell",
