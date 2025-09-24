@@ -168,7 +168,6 @@
 
           shellHook = ''
             {{- /* INFO: because glibcLocales is a linux only package, and causes nixy shell to break on macos */}}
-
             ${
               if pkgs.stdenv.isLinux
               then ''export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive''
