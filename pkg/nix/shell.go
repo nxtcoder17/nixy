@@ -107,10 +107,15 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceFlakeDirMountedPath),
 	)
 
-	if n.hasHashChanged {
+	nixFlakeProfileName := "flake.profile"
+
+	if n.hasHashChanged || !exists(filepath.Join(n.executorArgs.WorkspaceFlakeDirHostPath, nixFlakeProfileName)) {
 		scripts = append(scripts,
+			fmt.Sprintf("nix profile wipe-history --profile ./%s", nixFlakeProfileName),
+			fmt.Sprintf("nix develop --profile ./%s --command echo '' > /dev/null", nixFlakeProfileName),
+
 			// [READ about nix print-dev-env](https://nix.dev/manual/nix/2.18/command-ref/new-cli/nix3-print-dev-env)
-			"nix print-dev-env ./ > shell-init.sh",
+			fmt.Sprintf("nix print-dev-env ./%s > shell-init.sh", nixFlakeProfileName),
 		)
 	}
 
