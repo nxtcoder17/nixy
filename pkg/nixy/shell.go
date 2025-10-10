@@ -25,6 +25,11 @@ const (
 )
 
 func (nix *Nixy) writeWorkspaceFlake(ctx *Context, extraPackages []*NormalizedPackage, extraLibraries []string) error {
+	if !nix.hasHashChanged {
+		slog.Debug("nixy.yml hash has not changed, skipped writing flake.nix")
+		return nil
+	}
+
 	input := WorkspaceFlakeGenParams{
 		NixPkgsDefaultCommit: nix.NixPkgs,
 		WorkspaceDirPath:     ctx.PWD,
@@ -34,18 +39,12 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context, extraPackages []*NormalizedPa
 	}
 
 	input.Packages = append(input.Packages, extraPackages...)
+	input.Packages = append(input.Packages, nix.Packages...)
+
 	input.Libraries = append(input.Libraries, extraLibraries...)
+	input.Libraries = append(input.Libraries, nix.Libraries...)
 
-	if nix.hasHashChanged {
-		input.Packages = append(input.Packages, nix.Packages...)
-		input.Libraries = append(input.Libraries, nix.Libraries...)
-		maps.Copy(input.Builds, nix.Builds)
-	}
-
-	if !nix.hasHashChanged {
-		slog.Debug("nixy.yml hash has not changed, skipped writing flake.nix")
-		return nil
-	}
+	maps.Copy(input.Builds, nix.Builds)
 
 	flakeParams, err := genWorkspaceFlakeParams(input)
 	if err != nil {
@@ -84,6 +83,11 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 			return nil, fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
 		}
 		n.hasHashChanged = n.hasHashChanged || profileNix.hasHashChanged
+		for i := range profileNix.Packages {
+			if profileNix.Packages[i].NixPackage != nil && profileNix.Packages[i].NixPackage.Commit == "" {
+				profileNix.Packages[i].NixPackage.Commit = profileNix.NixPkgs
+			}
+		}
 		extraPackages = profileNix.Packages
 		extraLibraries = profileNix.Libraries
 		extraEnv = profileNix.Env
@@ -132,7 +136,7 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	nixShell := []string{
 		"shell",
 		"--ignore-environment",
-		"--quiet", "--quiet",
+		// "--quiet", "--quiet",
 		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs),
 		"--command",
 		"bash",
