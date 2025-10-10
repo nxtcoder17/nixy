@@ -1,4 +1,4 @@
-package nix
+package nixy
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nxtcoder17/nixy/pkg/nix/templates"
+	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 )
 
 type ShellContext struct {
@@ -24,7 +24,12 @@ const (
 	BuildHookFileName = "build-hook.sh"
 )
 
-func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
+func (nix *Nixy) writeWorkspaceFlake(ctx *Context, extraPackages []*NormalizedPackage, extraLibraries []string) error {
+	if !nix.hasHashChanged {
+		slog.Debug("nixy.yml hash has not changed, skipped writing flake.nix")
+		return nil
+	}
+
 	input := WorkspaceFlakeGenParams{
 		NixPkgsDefaultCommit: nix.NixPkgs,
 		WorkspaceDirPath:     ctx.PWD,
@@ -33,26 +38,13 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 		Builds:               map[string]Build{},
 	}
 
-	if ctx.NixyUseProfile {
-		profileNix, err := LoadFromFile(ctx, nix.profile.ProfileNixyYAMLPath)
-		if err != nil {
-			return fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
-		}
-		nix.hasHashChanged = nix.hasHashChanged || profileNix.hasHashChanged
-		input.Packages = append(input.Packages, profileNix.Packages...)
-		input.Libraries = append(input.Libraries, profileNix.Libraries...)
-	}
+	input.Packages = append(input.Packages, extraPackages...)
+	input.Packages = append(input.Packages, nix.Packages...)
 
-	if nix.hasHashChanged {
-		input.Packages = append(input.Packages, nix.Packages...)
-		input.Libraries = append(input.Libraries, nix.Libraries...)
-		maps.Copy(input.Builds, nix.Builds)
-	}
+	input.Libraries = append(input.Libraries, extraLibraries...)
+	input.Libraries = append(input.Libraries, nix.Libraries...)
 
-	if !nix.hasHashChanged {
-		slog.Debug("nixy.yml hash has not changed, skipped writing flake.nix")
-		return nil
-	}
+	maps.Copy(input.Builds, nix.Builds)
 
 	flakeParams, err := genWorkspaceFlakeParams(input)
 	if err != nil {
@@ -81,7 +73,27 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context) error {
 }
 
 func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
-	if err := n.writeWorkspaceFlake(ctx); err != nil {
+	var extraPackages []*NormalizedPackage
+	var extraLibraries []string
+	var extraEnv map[string]string
+
+	if ctx.NixyUseProfile {
+		profileNix, err := LoadFromFile(ctx, n.profile.ProfileNixyYAMLPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
+		}
+		n.hasHashChanged = n.hasHashChanged || profileNix.hasHashChanged
+		for i := range profileNix.Packages {
+			if profileNix.Packages[i].NixPackage != nil && profileNix.Packages[i].NixPackage.Commit == "" {
+				profileNix.Packages[i].NixPackage.Commit = profileNix.NixPkgs
+			}
+		}
+		extraPackages = profileNix.Packages
+		extraLibraries = profileNix.Libraries
+		extraEnv = profileNix.Env
+	}
+
+	if err := n.writeWorkspaceFlake(ctx, extraPackages, extraLibraries); err != nil {
 		return nil, err
 	}
 
@@ -96,6 +108,10 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	scripts := []string{}
 
 	for k, v := range n.executorArgs.EnvVars.toMap(ctx) {
+		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
+	}
+
+	for k, v := range extraEnv {
 		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
 	}
 
@@ -120,7 +136,7 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	nixShell := []string{
 		"shell",
 		"--ignore-environment",
-		"--quiet", "--quiet",
+		// "--quiet", "--quiet",
 		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs),
 		"--command",
 		"bash",

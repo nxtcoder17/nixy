@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/nxtcoder17/fastlog"
-	"github.com/nxtcoder17/nixy/pkg/nix"
+	"github.com/nxtcoder17/nixy/pkg/nixy"
 	"github.com/urfave/cli/v3"
 )
 
@@ -38,7 +38,7 @@ func main() {
 				Action: func(ctx context.Context, c *cli.Command) error {
 					if _, err := os.Stat("nixy.yml"); err != nil {
 						if errors.Is(err, fs.ErrNotExist) {
-							return nix.InitNixyFile(ctx, "nixy.yml")
+							return nixy.InitNixyFile(ctx, "nixy.yml")
 						}
 						return err
 					}
@@ -55,7 +55,7 @@ func main() {
 						Name:    "list",
 						Aliases: []string{"ls"},
 						Action: func(ctx context.Context, c *cli.Command) error {
-							profiles, err := nix.ProfileList(ctx)
+							profiles, err := nixy.ProfileList(ctx)
 							if err != nil {
 								return err
 							}
@@ -90,7 +90,7 @@ func main() {
 								profileName = v
 							}
 
-							if err := nix.ProfileCreate(ctx, c.StringArg("profile-name")); err != nil {
+							if err := nixy.ProfileCreate(ctx, c.StringArg("profile-name")); err != nil {
 								return err
 							}
 							return nil
@@ -109,7 +109,7 @@ func main() {
 							},
 						},
 						Action: func(ctx context.Context, c *cli.Command) error {
-							if err := nix.ProfileEdit(ctx, c.Args().First()); err != nil {
+							if err := nixy.ProfileEdit(ctx, c.Args().First()); err != nil {
 								return err
 							}
 
@@ -165,7 +165,7 @@ func main() {
 				Name:    "build",
 				Suggest: true,
 				Action: func(ctx context.Context, c *cli.Command) error {
-					n, err := nix.LoadInNixyShell(ctx)
+					n, err := nixy.LoadInNixyShell(ctx)
 					if err != nil {
 						return err
 					}
@@ -214,20 +214,13 @@ func main() {
 	}
 }
 
-func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nix.Nixy, error) {
-	logger := fastlog.New(fastlog.Options{
-		Writer:        os.Stderr,
-		Format:        fastlog.ConsoleFormat,
-		ShowDebugLogs: c.IsSet("debug"),
-		ShowCaller:    true,
-		EnableColors:  true,
-	})
-
+func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.Nixy, error) {
+	logger := fastlog.New(fastlog.Console(), fastlog.ShowDebugLogs(c.Bool("debug")))
 	slog.SetDefault(logger.Slog())
 
 	switch {
 	case c.IsSet("file"):
-		return nix.LoadFromFile(ctx, c.String("file"))
+		return nixy.LoadFromFile(ctx, c.String("file"))
 
 	default:
 		dir, err := os.Getwd()
@@ -250,7 +243,7 @@ func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nix.Nixy, error) {
 					continue
 				}
 
-				return nix.LoadFromFile(ctx, filepath.Join(dir, fn))
+				return nixy.LoadFromFile(ctx, filepath.Join(dir, fn))
 			}
 
 			oldDir = dir

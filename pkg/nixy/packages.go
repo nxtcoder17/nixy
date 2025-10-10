@@ -1,4 +1,4 @@
-package nix
+package nixy
 
 import (
 	"crypto/sha256"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nxtcoder17/nixy/pkg/nix/templates"
+	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 	"github.com/nxtcoder17/nixy/pkg/set"
 	"gopkg.in/yaml.v3"
 )

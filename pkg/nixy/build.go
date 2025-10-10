@@ -1,4 +1,4 @@
-package nix
+package nixy
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/nxtcoder17/nixy/pkg/nix/templates"
+	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 )
 
 func (nixy *Nixy) Build(ctx *Context, target string) error {
@@ -92,7 +92,6 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-
 
 	return nil
 }

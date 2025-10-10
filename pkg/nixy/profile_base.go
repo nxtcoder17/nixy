@@ -1,4 +1,4 @@
-package nix
+package nixy
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nxtcoder17/nixy/pkg/nix/templates"
+	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 )
 
 // Profile represents a general profile that all executors can use

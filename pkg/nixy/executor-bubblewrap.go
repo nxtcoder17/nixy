@@ -1,4 +1,4 @@
-package nix
+package nixy
 
 import (
 	"errors"
@@ -105,8 +105,14 @@ func (nixy *Nixy) bubblewrapShell(ctx *Context, command string, args ...string) 
 		"--clearenv",
 	}
 
+	// bwrapArgs = append(bwrapArgs, "--setenv", "PATH", strings.Join(nixy.executorArgs.EnvVars.Path, ":"))
+
 	envMap := nixy.executorArgs.EnvVars.toMap(ctx)
 	for k, v := range envMap {
+		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
+	}
+
+	for k, v := range nixy.Env {
 		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
 	}
 

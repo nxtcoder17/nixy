@@ -1,4 +1,4 @@
-package nix
+package nixy
 
 import (
 	"fmt"
@@ -79,6 +79,10 @@ func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*ex
 	}
 
 	for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
+		dockerCmd = append(dockerCmd, "-e", k+"="+v)
+	}
+
+	for k, v := range nixy.Env {
 		dockerCmd = append(dockerCmd, "-e", k+"="+v)
 	}
 

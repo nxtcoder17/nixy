@@ -1,4 +1,4 @@
-package nix
+package nixy
 
 import (
 	"crypto/md5"
