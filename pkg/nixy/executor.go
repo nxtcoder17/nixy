@@ -20,11 +20,13 @@ func XDGDataDir() string {
 
 func (nixy *Nixy) PrepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	switch ctx.NixyMode {
-	case LocalExecutor:
+	case LocalMode:
 		return nixy.localShell(ctx, command, args...)
-	case DockerExecutor:
+	case LocalIgnoreEnvMode:
+		return nixy.localShell(ctx, command, args...)
+	case DockerMode:
 		return nixy.dockerShell(ctx, command, args...)
-	case BubbleWrapExecutor:
+	case BubbleWrapMode:
 		return nixy.bubblewrapShell(ctx, command, args...)
 	default:
 		return nil, fmt.Errorf("unknown executor: %s, only local and docker executors are supported", ctx.NixyMode)

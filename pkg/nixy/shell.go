@@ -1,7 +1,6 @@
 package nixy
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -14,14 +13,9 @@ import (
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 )
 
-type ShellContext struct {
-	context.Context
-	EnvVars map[string]string
-}
-
 const (
-	ShellHookFileName = "shell-hook.sh"
-	BuildHookFileName = "build-hook.sh"
+	shellHookFileName = "shell-hook.sh"
+	buildHookFileName = "build-hook.sh"
 )
 
 func (nix *Nixy) writeWorkspaceFlake(ctx *Context, extraPackages []*NormalizedPackage, extraLibraries []string) error {
@@ -133,16 +127,19 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	scripts = append(scripts, "source shell-init.sh")
 	scripts = append(scripts, program)
 
-	nixShell := []string{
-		"shell",
-		"--ignore-environment",
-		// "--quiet", "--quiet",
+	nixShell := []string{"shell"}
+
+	if ctx.NixyMode != LocalMode {
+		nixShell = append(nixShell, "--ignore-environment")
+	}
+
+	nixShell = append(nixShell,
 		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs),
 		"--command",
 		"bash",
 		"-c",
 		strings.Join(scripts, "\n"),
-	}
+	)
 
 	cmd, err := n.PrepareShellCommand(ctx, n.executorArgs.NixBinaryMountedPath, nixShell...)
 	if err != nil {

@@ -24,7 +24,7 @@ type Context struct {
 }
 
 func (ctx *Context) IsLocalMode() bool {
-	return ctx.NixyMode == LocalExecutor
+	return ctx.NixyMode == LocalMode
 }
 
 type NixyHostDataStore struct {
@@ -61,7 +61,7 @@ func NewContext(parent context.Context, workspaceDir string) (*Context, error) {
 	if v, ok := os.LookupEnv("NIXY_EXECUTOR"); ok {
 		ctx.NixyMode = Mode(v)
 	} else {
-		ctx.NixyMode = LocalExecutor
+		ctx.NixyMode = LocalMode
 	}
 
 	if v, ok := os.LookupEnv("NIXY_USE_PROFILE"); ok {

@@ -21,6 +21,9 @@ import (
 
 var Version string
 
+//go:embed shell/hook.fish
+var shellHookFish string
+
 func main() {
 	if Version == "" {
 		Version = fmt.Sprintf("nightly | %s", time.Now().Format(time.RFC3339))
@@ -127,6 +130,20 @@ func main() {
 				},
 			},
 			{
+				Name:    "shell:hook",
+				Suggest: true,
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:   "shell",
+						Config: cli.StringConfig{TrimSpace: true},
+					},
+				},
+				Action: func(ctx context.Context, c *cli.Command) error {
+					fmt.Printf(shellHookFish)
+					return nil
+				},
+			},
+			{
 				Name:    "shell",
 				Suggest: true,
 				Action: func(ctx context.Context, c *cli.Command) error {
@@ -196,6 +213,12 @@ func main() {
 		// ShellCompletionCommandName: "completion:shell",
 		EnableShellCompletion: true,
 
+		Before: func(ctx context.Context, c *cli.Command) (context.Context, error) {
+			logger := fastlog.New(fastlog.Console(), fastlog.ShowDebugLogs(c.Bool("debug")))
+			slog.SetDefault(logger.Slog())
+			return ctx, nil
+		},
+
 		Commands: commands,
 
 		Suggest: true,
@@ -215,9 +238,6 @@ func main() {
 }
 
 func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.Nixy, error) {
-	logger := fastlog.New(fastlog.Console(), fastlog.ShowDebugLogs(c.Bool("debug")))
-	slog.SetDefault(logger.Slog())
-
 	switch {
 	case c.IsSet("file"):
 		return nixy.LoadFromFile(ctx, c.String("file"))

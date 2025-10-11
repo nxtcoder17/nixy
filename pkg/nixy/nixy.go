@@ -15,9 +15,10 @@ import (
 type Mode string
 
 const (
-	LocalExecutor      Mode = "local"
-	DockerExecutor     Mode = "docker"
-	BubbleWrapExecutor Mode = "bubblewrap"
+	LocalMode          Mode = "local"
+	LocalIgnoreEnvMode Mode = "local-ignore-env"
+	DockerMode         Mode = "docker"
+	BubbleWrapMode     Mode = "bubblewrap"
 )
 
 func (m Mode) String() string {
@@ -131,17 +132,17 @@ func LoadFromFile(parent context.Context, f string) (*Nixy, error) {
 	}
 
 	switch ctx.NixyMode {
-	case BubbleWrapExecutor:
+	case BubbleWrapMode:
 		nixy.executorArgs, err = UseBubbleWrap(ctx, profile)
 		if err != nil {
 			return nil, err
 		}
-	case DockerExecutor:
+	case DockerMode:
 		nixy.executorArgs, err = UseDocker(ctx, profile)
 		if err != nil {
 			return nil, err
 		}
-	case LocalExecutor:
+	case LocalMode:
 		nixy.executorArgs, err = UseLocal(ctx, profile)
 		if err != nil {
 			return nil, err

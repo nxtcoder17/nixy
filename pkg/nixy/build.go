@@ -26,7 +26,7 @@ func (nixy *Nixy) Build(ctx *Context, target string) error {
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(nixy.executorArgs.WorkspaceFlakeDirHostPath, BuildHookFileName), b, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(nixy.executorArgs.WorkspaceFlakeDirHostPath, buildHookFileName), b, 0o644); err != nil {
 		return err
 	}
 
@@ -70,7 +70,7 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 		return fmt.Errorf("NIXY_WORKSPACE_FLAKE_DIR must be set in a nixy shell")
 	}
 
-	buildHookScript := filepath.Join(wsFlakeDir, BuildHookFileName)
+	buildHookScript := filepath.Join(wsFlakeDir, buildHookFileName)
 
 	if err := os.WriteFile(buildHookScript, b, 0o644); err != nil {
 		return err
