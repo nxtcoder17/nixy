@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 )
 
 func UseBubbleWrap(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
@@ -108,12 +110,17 @@ func (nixy *Nixy) bubblewrapShell(ctx *Context, command string, args ...string) 
 	// bwrapArgs = append(bwrapArgs, "--setenv", "PATH", strings.Join(nixy.executorArgs.EnvVars.Path, ":"))
 
 	envMap := nixy.executorArgs.EnvVars.toMap(ctx)
-	for k, v := range envMap {
-		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
+	maps.Copy(envMap, nixy.Env)
+
+	keys := make([]string, 0, len(envMap))
+	for k := range envMap {
+		keys = append(keys, k)
 	}
 
-	for k, v := range nixy.Env {
-		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
+	slices.Sort(keys)
+
+	for _, k := range keys {
+		bwrapArgs = append(bwrapArgs, "--setenv", k, os.ExpandEnv(envMap[k]))
 	}
 
 	bwrapArgs = append(bwrapArgs, command)

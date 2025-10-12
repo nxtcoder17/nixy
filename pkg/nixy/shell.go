@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -67,27 +68,28 @@ func (nix *Nixy) writeWorkspaceFlake(ctx *Context, extraPackages []*NormalizedPa
 }
 
 func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
-	var extraPackages []*NormalizedPackage
-	var extraLibraries []string
-	var extraEnv map[string]string
+	var profilePackages []*NormalizedPackage
+	var profileLibs []string
+	var profileEnvVars map[string]string
 
 	if ctx.NixyUseProfile {
 		profileNix, err := LoadFromFile(ctx, n.profile.ProfileNixyYAMLPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
 		}
+
 		n.hasHashChanged = n.hasHashChanged || profileNix.hasHashChanged
 		for i := range profileNix.Packages {
 			if profileNix.Packages[i].NixPackage != nil && profileNix.Packages[i].NixPackage.Commit == "" {
 				profileNix.Packages[i].NixPackage.Commit = profileNix.NixPkgs
 			}
 		}
-		extraPackages = profileNix.Packages
-		extraLibraries = profileNix.Libraries
-		extraEnv = profileNix.Env
+		profilePackages = profileNix.Packages
+		profileLibs = profileNix.Libraries
+		profileEnvVars = profileNix.Env
 	}
 
-	if err := n.writeWorkspaceFlake(ctx, extraPackages, extraLibraries); err != nil {
+	if err := n.writeWorkspaceFlake(ctx, profilePackages, profileLibs); err != nil {
 		return nil, err
 	}
 
@@ -101,16 +103,19 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 
 	scripts := []string{}
 
-	for k, v := range n.executorArgs.EnvVars.toMap(ctx) {
-		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
+	envMap := n.executorArgs.EnvVars.toMap(ctx)
+	maps.Copy(envMap, profileEnvVars)
+	maps.Copy(envMap, n.Env)
+
+	keys := make([]string, 0, len(envMap))
+	for k := range envMap {
+		keys = append(keys, k)
 	}
 
-	for k, v := range extraEnv {
-		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
-	}
+	slices.Sort(keys)
 
-	for k, v := range n.Env {
-		scripts = append(scripts, fmt.Sprintf("export %s=%q", k, v))
+	for _, k := range keys {
+		scripts = append(scripts, os.ExpandEnv(fmt.Sprintf("export %s=%q", k, envMap[k])))
 	}
 
 	scripts = append(scripts,

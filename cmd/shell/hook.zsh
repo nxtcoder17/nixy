@@ -1,20 +1,17 @@
-set -g last_dir ""
-function __nixy_shell_activate --on-variable PWD --on-event fish_prompt
-  test "$last_dir" = "$PWD" && return
+NIXY_LAST_DIR=""
 
-  if test -n "$NIXY_SHELL"
-    return
-  end
+__nixy_shell_activate() {
+  [[ "$NIXY_LAST_DIR" == "$PWD" ]] && return
 
-  if not test -e nixy.yml
-    return
-  end
+  [[ -n "$NIXY_SHELL" ]] && return
+
+  [[ ! -f nixy.yml ]] && return
 
   # Save cursor position before displaying prompt
   tput sc
 
   # Display prompt
-  if type -q gum
+  if command -v gum &>/dev/null; then
     gum style \
       --border rounded \
       --border-foreground 212 \
@@ -32,21 +29,26 @@ function __nixy_shell_activate --on-variable PWD --on-event fish_prompt
     echo "  Press ENTER to launch nixy shell"
     echo "  (any other key to skip • auto-yes in 2s)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  end
+  fi
 
   # Read user input with 2 second timeout
-  set -l response (bash -c "read -t 2 -n 1 -s key; echo \$?; echo \$key")
-  set -l exit_code $response[1]
-  set -l key (string join '' $response[2..-1])
+  local key
+  local exit_code
+  read -t 2 -k 1 -s key
+  exit_code=$?
 
   # Restore cursor position and clear to end of screen
   tput rc
   tput ed
 
   # Launch nixy shell on ENTER or timeout
-  if test $exit_code -eq 0 -a -z "$key"; or test $exit_code -gt 128
+  if [[ $exit_code -eq 0 && -z "$key" ]] || [[ $exit_code -gt 128 ]]; then
     nixy shell
-  end
-  set -g last_dir "$PWD"
-end
+  fi
 
+  NIXY_LAST_DIR="$PWD"
+}
+
+# Hook into prompt using precmd
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd __nixy_shell_activate

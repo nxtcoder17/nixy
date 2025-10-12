@@ -24,6 +24,12 @@ var Version string
 //go:embed shell/hook.fish
 var shellHookFish string
 
+//go:embed shell/hook.bash
+var shellHookBash string
+
+//go:embed shell/hook.zsh
+var shellHookZsh string
+
 func main() {
 	if Version == "" {
 		Version = fmt.Sprintf("nightly | %s", time.Now().Format(time.RFC3339))
@@ -139,7 +145,17 @@ func main() {
 					},
 				},
 				Action: func(ctx context.Context, c *cli.Command) error {
-					fmt.Printf(shellHookFish)
+					shell := c.StringArg("shell")
+					switch shell {
+					case "fish":
+						fmt.Print(shellHookFish)
+					case "bash":
+						fmt.Print(shellHookBash)
+					case "zsh":
+						fmt.Print(shellHookZsh)
+					default:
+						return fmt.Errorf("unsupported shell: %s (supported: fish, bash, zsh)", shell)
+					}
 					return nil
 				},
 			},
@@ -238,38 +254,34 @@ func main() {
 }
 
 func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.Nixy, error) {
-	switch {
-	case c.IsSet("file"):
+	if c.IsSet("file") {
 		return nixy.LoadFromFile(ctx, c.String("file"))
+	}
 
-	default:
-		dir, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
 
-		oldDir := ""
+	oldDir := ""
 
-		nixyConfigFiles := []string{
-			"nixy.yml",
-		}
+	nixyConfigFiles := []string{"nixy.yml"}
 
-		for oldDir != dir {
-			for _, fn := range nixyConfigFiles {
-				if _, err := os.Stat(filepath.Join(dir, fn)); err != nil {
-					if !os.IsNotExist(err) {
-						return nil, err
-					}
-					continue
+	for oldDir != dir {
+		for _, fn := range nixyConfigFiles {
+			if _, err := os.Stat(filepath.Join(dir, fn)); err != nil {
+				if !os.IsNotExist(err) {
+					return nil, err
 				}
-
-				return nixy.LoadFromFile(ctx, filepath.Join(dir, fn))
+				continue
 			}
 
-			oldDir = dir
-			dir = filepath.Dir(dir)
+			return nixy.LoadFromFile(ctx, filepath.Join(dir, fn))
 		}
 
-		return nil, fmt.Errorf("failed to locate your nearest Nixyfile")
+		oldDir = dir
+		dir = filepath.Dir(dir)
 	}
+
+	return nil, fmt.Errorf("failed to locate your nearest Nixyfile")
 }
