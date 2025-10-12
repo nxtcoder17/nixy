@@ -15,11 +15,20 @@ import (
 	"time"
 
 	"github.com/nxtcoder17/fastlog"
-	"github.com/nxtcoder17/nixy/pkg/nix"
+	"github.com/nxtcoder17/nixy/pkg/nixy"
 	"github.com/urfave/cli/v3"
 )
 
 var Version string
+
+//go:embed shell/hook.fish
+var shellHookFish string
+
+//go:embed shell/hook.bash
+var shellHookBash string
+
+//go:embed shell/hook.zsh
+var shellHookZsh string
 
 func main() {
 	if Version == "" {
@@ -38,7 +47,7 @@ func main() {
 				Action: func(ctx context.Context, c *cli.Command) error {
 					if _, err := os.Stat("nixy.yml"); err != nil {
 						if errors.Is(err, fs.ErrNotExist) {
-							return nix.InitNixyFile(ctx, "nixy.yml")
+							return nixy.InitNixyFile(ctx, "nixy.yml")
 						}
 						return err
 					}
@@ -55,7 +64,7 @@ func main() {
 						Name:    "list",
 						Aliases: []string{"ls"},
 						Action: func(ctx context.Context, c *cli.Command) error {
-							profiles, err := nix.ProfileList(ctx)
+							profiles, err := nixy.ProfileList(ctx)
 							if err != nil {
 								return err
 							}
@@ -90,7 +99,7 @@ func main() {
 								profileName = v
 							}
 
-							if err := nix.ProfileCreate(ctx, c.StringArg("profile-name")); err != nil {
+							if err := nixy.ProfileCreate(ctx, c.StringArg("profile-name")); err != nil {
 								return err
 							}
 							return nil
@@ -109,7 +118,7 @@ func main() {
 							},
 						},
 						Action: func(ctx context.Context, c *cli.Command) error {
-							if err := nix.ProfileEdit(ctx, c.Args().First()); err != nil {
+							if err := nixy.ProfileEdit(ctx, c.Args().First()); err != nil {
 								return err
 							}
 
@@ -123,6 +132,30 @@ func main() {
 						v = "default"
 					}
 					fmt.Println(v)
+					return nil
+				},
+			},
+			{
+				Name:    "shell:hook",
+				Suggest: true,
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:   "shell",
+						Config: cli.StringConfig{TrimSpace: true},
+					},
+				},
+				Action: func(ctx context.Context, c *cli.Command) error {
+					shell := c.StringArg("shell")
+					switch shell {
+					case "fish":
+						fmt.Print(shellHookFish)
+					case "bash":
+						fmt.Print(shellHookBash)
+					case "zsh":
+						fmt.Print(shellHookZsh)
+					default:
+						return fmt.Errorf("unsupported shell: %s (supported: fish, bash, zsh)", shell)
+					}
 					return nil
 				},
 			},
@@ -165,7 +198,7 @@ func main() {
 				Name:    "build",
 				Suggest: true,
 				Action: func(ctx context.Context, c *cli.Command) error {
-					n, err := nix.LoadInNixyShell(ctx)
+					n, err := nixy.LoadInNixyShell(ctx)
 					if err != nil {
 						return err
 					}
@@ -196,6 +229,12 @@ func main() {
 		// ShellCompletionCommandName: "completion:shell",
 		EnableShellCompletion: true,
 
+		Before: func(ctx context.Context, c *cli.Command) (context.Context, error) {
+			logger := fastlog.New(fastlog.Console(), fastlog.ShowDebugLogs(c.Bool("debug")))
+			slog.SetDefault(logger.Slog())
+			return ctx, nil
+		},
+
 		Commands: commands,
 
 		Suggest: true,
@@ -214,49 +253,35 @@ func main() {
 	}
 }
 
-func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nix.Nixy, error) {
-	logger := fastlog.New(fastlog.Options{
-		Writer:        os.Stderr,
-		Format:        fastlog.ConsoleFormat,
-		ShowDebugLogs: c.IsSet("debug"),
-		ShowCaller:    true,
-		EnableColors:  true,
-	})
+func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.Nixy, error) {
+	if c.IsSet("file") {
+		return nixy.LoadFromFile(ctx, c.String("file"))
+	}
 
-	slog.SetDefault(logger.Slog())
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
 
-	switch {
-	case c.IsSet("file"):
-		return nix.LoadFromFile(ctx, c.String("file"))
+	oldDir := ""
 
-	default:
-		dir, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
+	nixyConfigFiles := []string{"nixy.yml"}
 
-		oldDir := ""
-
-		nixyConfigFiles := []string{
-			"nixy.yml",
-		}
-
-		for oldDir != dir {
-			for _, fn := range nixyConfigFiles {
-				if _, err := os.Stat(filepath.Join(dir, fn)); err != nil {
-					if !os.IsNotExist(err) {
-						return nil, err
-					}
-					continue
+	for oldDir != dir {
+		for _, fn := range nixyConfigFiles {
+			if _, err := os.Stat(filepath.Join(dir, fn)); err != nil {
+				if !os.IsNotExist(err) {
+					return nil, err
 				}
-
-				return nix.LoadFromFile(ctx, filepath.Join(dir, fn))
+				continue
 			}
 
-			oldDir = dir
-			dir = filepath.Dir(dir)
+			return nixy.LoadFromFile(ctx, filepath.Join(dir, fn))
 		}
 
-		return nil, fmt.Errorf("failed to locate your nearest Nixyfile")
+		oldDir = dir
+		dir = filepath.Dir(dir)
 	}
+
+	return nil, fmt.Errorf("failed to locate your nearest Nixyfile")
 }
