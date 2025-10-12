@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = {
@@ -58,6 +59,33 @@
           shellHook = ''
             export PATH="$PWD/bin:$PATH"
           '';
+        };
+
+        packages.default = pkgs.buildGoModule {
+          pname = "nixy";
+          version = "dev";
+          src = ./.;
+
+          vendorHash = "sha256-jvWfx7cvEsmofeV7pDtNkzKM50QVHa9pb0rtzeyu7ro=";
+
+          subPackages = ["cmd"];
+
+          ldflags = [
+            "-s"
+            "-w"
+            "-X main.Version=dev"
+          ];
+
+          postInstall = ''
+            mv $out/bin/cmd $out/bin/nixy
+          '';
+
+          meta = with pkgs.lib; {
+            description = "An approachable nix based development workspace setup tool";
+            homepage = "https://github.com/nxtcoder17/nixy";
+            license = licenses.mit;
+            maintainers = [];
+          };
         };
       }
     );

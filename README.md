@@ -14,49 +14,50 @@ nixy init
 
 # Enter development shell
 nixy shell
-
-# Build your project
-nixy build <build-name>
 ```
 
 ## Auto Jump into nixy shell
 
+Automatically enter the nixy shell when you navigate to a directory with a `nixy.yml` file.
+
+### Shell Integration
+
+Add the following to your shell configuration file:
+
 <details>
 <summary>Fish Shell</summary>
 
-### Add the following code at the end of your fish config
+Append to `~/.config/fish/config.fish`:
 ```fish
-function __nixy_shell_activate --on-variable PWD
-  if not status is-interactive
-    return
-  end
-
-  if test -n "$NIXY_SHELL"
-    return
-  end
-
-  if not test -e nixy.yml
-    return
-  end
-
-  set value (fzf --reverse --prompt "Enter nixy shell ? " < (printf "YES\nNO" | psub))
-
-  if test -z $value
-    set value "YES"
-  end
-
-  if test "$value" = "NO"
-    return
-  end
-
-  exec nixy shell
-end
-
-if status is-interactive
-  __nixy_shell_activate
-end
+nixy shell:hook fish | source
 ```
 </details>
+
+<details>
+<summary>Bash</summary>
+
+Append to `~/.bashrc`:
+```bash
+eval "$(nixy shell:hook bash)"
+```
+</details>
+
+<details>
+<summary>Zsh</summary>
+
+Append to `~/.zshrc`:
+```zsh
+eval "$(nixy shell:hook zsh)"
+```
+</details>
+
+### Features
+- Supports auto-entering the nixy shell when `nixy.yml` is in the current directory
+- Shows interactive prompt with 2-second timeout
+- Press ENTER to launch, any other key to skip
+- Auto-launches after timeout if no input
+- Prevents duplicate activation when already in nixy shell
+- Optional fancy styling with [gum](https://github.com/charmbracelet/gum)
 
 ## Installation
 
@@ -135,7 +136,7 @@ Define reproducible builds:
 ```yaml
 builds:
   my-app:
-    package:
+    packages:
       - out/my-binary
       - config.json
     hook: |
@@ -145,9 +146,15 @@ builds:
 ### 🏃 Multiple Execution Backends
 
 #### Local (Default)
-Uses your system's Nix installation:
+Uses your system's Nix installation and inherits host environment:
 ```bash
 nixy shell
+```
+
+#### Local (Pure Environment)
+Uses your system's Nix installation but creates a pure environment (ignores host environment variables):
+```bash
+NIXY_EXECUTOR=local-ignore-env nixy shell
 ```
 
 #### Docker
@@ -165,7 +172,7 @@ NIXY_EXECUTOR=bubblewrap nixy shell
 ### 👤 Profile Management
 
 > [!NOTE]
-> Profiles give file system isolation, different dev shells in the same profile, share some filesystem like nix-store, fake-home etc.
+> Profiles provide file system isolation. Different dev shells within the same profile share some filesystems like nix-store, fake-home, etc.
 
 Keep separate development profiles:
 ```bash
@@ -227,7 +234,7 @@ env:
 - `nixy init` - Initialize a new nixy.yml
 - `nixy shell` - Enter development shell
 - `nixy build [target]` - Build defined targets
-- `nixy run <command>` - Run command in nixy environment
+- `nixy shell:hook <shell>` - Output shell hook script for auto-activation (supports: bash, zsh, fish)
 
 ### Profile Commands
 - `nixy profile create <name>` - Create new profile
@@ -333,14 +340,14 @@ builds:
   <target>:
     packages:
       - <package>
-    paths: |
+    paths:
       - <file-path-1>
       - <file-path-2>
 ```
 
 ## Environment Variables
 
-- `NIXY_EXECUTOR` - Execution backend (local, docker, bubblewrap)
+- `NIXY_EXECUTOR` - Execution backend (local, local-ignore-env, docker, bubblewrap)
 - `NIXY_PROFILE`  - Profile name to use
 
 ## Troubleshooting
