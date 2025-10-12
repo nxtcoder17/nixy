@@ -146,9 +146,15 @@ builds:
 ### 🏃 Multiple Execution Backends
 
 #### Local (Default)
-Uses your system's Nix installation:
+Uses your system's Nix installation and inherits host environment:
 ```bash
 nixy shell
+```
+
+#### Local (Pure Environment)
+Uses your system's Nix installation but creates a pure environment (ignores host environment variables):
+```bash
+NIXY_EXECUTOR=local-ignore-env nixy shell
 ```
 
 #### Docker
@@ -341,7 +347,7 @@ builds:
 
 ## Environment Variables
 
-- `NIXY_EXECUTOR` - Execution backend (local, docker, bubblewrap)
+- `NIXY_EXECUTOR` - Execution backend (local, local-ignore-env, docker, bubblewrap)
 - `NIXY_PROFILE`  - Profile name to use
 
 ## Troubleshooting
