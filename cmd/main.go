@@ -44,7 +44,7 @@ func main() {
 			{
 				Name:    "init",
 				Suggest: true,
-				Action: func(ctx context.Context, c *cli.Command) error {
+				Action: func(ctx context.Context, _ *cli.Command) error {
 					if _, err := os.Stat("nixy.yml"); err != nil {
 						if errors.Is(err, fs.ErrNotExist) {
 							return nixy.InitNixyFile(ctx, "nixy.yml")
@@ -63,12 +63,11 @@ func main() {
 					{
 						Name:    "list",
 						Aliases: []string{"ls"},
-						Action: func(ctx context.Context, c *cli.Command) error {
+						Action: func(ctx context.Context, _ *cli.Command) error {
 							profiles, err := nixy.ProfileList(ctx)
 							if err != nil {
 								return err
 							}
-
 							for _, profile := range profiles {
 								fmt.Printf("🪪 %s (%s)\n", filepath.Base(profile), profile)
 							}
@@ -99,10 +98,7 @@ func main() {
 								profileName = v
 							}
 
-							if err := nixy.ProfileCreate(ctx, c.StringArg("profile-name")); err != nil {
-								return err
-							}
-							return nil
+							return nixy.ProfileCreate(ctx, c.StringArg("profile-name"))
 						},
 					},
 					{
@@ -118,15 +114,11 @@ func main() {
 							},
 						},
 						Action: func(ctx context.Context, c *cli.Command) error {
-							if err := nixy.ProfileEdit(ctx, c.Args().First()); err != nil {
-								return err
-							}
-
-							return nil
+							return nixy.ProfileEdit(ctx, c.Args().First())
 						},
 					},
 				},
-				Action: func(ctx context.Context, c *cli.Command) error {
+				Action: func(context.Context, *cli.Command) error {
 					v, ok := os.LookupEnv("NIXY_PROFILE")
 					if !ok {
 						v = "default"

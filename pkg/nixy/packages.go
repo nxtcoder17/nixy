@@ -91,45 +91,48 @@ func (p *NormalizedPackage) MarshalYAML() (any, error) {
 }
 
 func parseNixPackage(pkg string) (*NormalizedPackage, error) {
-	if !strings.HasPrefix(pkg, "nixpkgs/") {
+	parts := strings.SplitN(pkg, "#", 2)
+
+	switch len(parts) {
+	case 1:
+		// INFO: means just package name
 		return &NormalizedPackage{NixPackage: &NixPackage{Name: pkg, Commit: ""}}, nil
-	}
-	// Parse nixpkgs/COMMIT#package format
-	parts := strings.Split(pkg, "#")
-	if len(parts) != 2 {
+	case 2:
+		return &NormalizedPackage{NixPackage: &NixPackage{Name: parts[1], Commit: parts[0]}}, nil
+	default:
 		return nil, fmt.Errorf("invalid package format: %s", pkg)
 	}
-
-	return &NormalizedPackage{NixPackage: &NixPackage{
-		Name:   parts[1],
-		Commit: strings.TrimPrefix(parts[0], "nixpkgs/"),
-	}}, nil
 }
 
 type WorkspaceFlakeGenParams struct {
-	NixPkgsDefaultCommit string
-	WorkspaceDirPath     string
-	Packages             []*NormalizedPackage
-	Libraries            []string
-	Builds               map[string]Build
+	NixPkgs          NixPkgsMap
+	WorkspaceDirPath string
+	Packages         []*NormalizedPackage
+	Libraries        []string
+	Builds           map[string]Build
+	EnvVars          map[string]string
 }
 
 func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.WorkspaceFlakeParams, error) {
-	cache := make(map[string]struct{})
-
 	result := templates.WorkspaceFlakeParams{
-		NixPkgsDefaultCommit: params.NixPkgsDefaultCommit,
-		NixPkgsCommits:       []string{},
-		PackagesMap:          map[string][]string{},
-		LibrariesMap:         map[string][]string{},
-		URLPackages:          []templates.URLPackage{},
-		WorkspaceDir:         params.WorkspaceDirPath,
-		Builds:               map[string]templates.WorkspaceFlakePackgeBuild{},
-		OSArch:               getOSArch(),
+		NixPkgsCommitsList: params.NixPkgs.List(),
+		NixPkgsCommitsMap:  params.NixPkgs,
+		PackagesMap:        map[string][]string{},
+		LibrariesMap:       map[string][]string{},
+		URLPackages:        []templates.URLPackage{},
+		WorkspaceDir:       params.WorkspaceDirPath,
+		Builds:             map[string]templates.WorkspaceFlakePackgeBuild{},
+		OSArch:             getOSArch(),
+		EnvVars:            params.EnvVars,
 	}
 
 	packagesMap := map[string]*set.Set[string]{}
 	librariesMap := map[string]*set.Set[string]{}
+
+	for k := range params.NixPkgs {
+		packagesMap[k] = &set.Set[string]{}
+		librariesMap[k] = &set.Set[string]{}
+	}
 
 	for _, pkg := range params.Packages {
 		if pkg == nil {
@@ -140,17 +143,9 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 			nixpkg := pkg.NixPackage
 
 			if nixpkg.Commit == "" {
-				nixpkg.Commit = params.NixPkgsDefaultCommit
+				nixpkg.Commit = params.NixPkgs.DefaultCommit()
 			}
 
-			if _, ok := cache[nixpkg.Commit]; !ok {
-				cache[nixpkg.Commit] = struct{}{}
-				result.NixPkgsCommits = append(result.NixPkgsCommits, nixpkg.Commit)
-			}
-
-			if _, ok := packagesMap[nixpkg.Commit]; !ok {
-				packagesMap[nixpkg.Commit] = &set.Set[string]{}
-			}
 			packagesMap[nixpkg.Commit].Add(nixpkg.Name)
 		}
 
@@ -176,17 +171,9 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		nixpkg := np.NixPackage
 
 		if nixpkg.Commit == "" {
-			nixpkg.Commit = params.NixPkgsDefaultCommit
+			nixpkg.Commit = params.NixPkgs.DefaultCommit()
 		}
 
-		if _, ok := cache[nixpkg.Commit]; !ok {
-			cache[nixpkg.Commit] = struct{}{}
-			result.NixPkgsCommits = append(result.NixPkgsCommits, nixpkg.Commit)
-		}
-
-		if _, ok := librariesMap[nixpkg.Commit]; !ok {
-			librariesMap[nixpkg.Commit] = &set.Set[string]{}
-		}
 		librariesMap[nixpkg.Commit].Add(nixpkg.Name)
 	}
 
@@ -201,12 +188,7 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 				nixpkg := pkg.NixPackage
 
 				if nixpkg.Commit == "" {
-					nixpkg.Commit = params.NixPkgsDefaultCommit
-				}
-
-				if _, ok := cache[nixpkg.Commit]; !ok {
-					cache[nixpkg.Commit] = struct{}{}
-					result.NixPkgsCommits = append(result.NixPkgsCommits, nixpkg.Commit)
+					nixpkg.Commit = params.NixPkgs.DefaultCommit()
 				}
 
 				pkgBuild.PackagesMap[nixpkg.Commit] = append(pkgBuild.PackagesMap[nixpkg.Commit], nixpkg.Name)
@@ -224,7 +206,6 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		result.LibrariesMap[k] = v.ToSortedList()
 	}
 
-	slices.Sort(result.NixPkgsCommits)
 	slices.SortFunc(result.URLPackages, func(a, b templates.URLPackage) int {
 		return strings.Compare(a.Name, b.Name)
 	})

@@ -24,21 +24,37 @@ func Test_parsePackage(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "[VALID] pinned nixpkgs package",
-			pkg:  "nixpkgs/41d292bfc37309790f70f4c120b79280ce40af16#go",
+			name: "[VALID] package with nixpkgs key",
+			pkg:  "stable#go",
 			want: &NormalizedPackage{
 				NixPackage: &NixPackage{
 					Name:   "go",
-					Commit: "41d292bfc37309790f70f4c120b79280ce40af16",
+					Commit: "stable",
 				},
 			},
 			wantErr: false,
 		},
 		{
-			name:    "[INVALID] pinned nixpkgs package",
-			pkg:     "nixpkgs/41d292bfc37309790f70f4c120b79280ce40af16/go",
-			want:    nil,
-			wantErr: true,
+			name: "[VALID] package with custom key",
+			pkg:  "unstable#python314",
+			want: &NormalizedPackage{
+				NixPackage: &NixPackage{
+					Name:   "python314",
+					Commit: "unstable",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "[VALID] package with nested attribute",
+			pkg:  "cuda#cudaPackages.cudatoolkit",
+			want: &NormalizedPackage{
+				NixPackage: &NixPackage{
+					Name:   "cudaPackages.cudatoolkit",
+					Commit: "cuda",
+				},
+			},
+			wantErr: false,
 		},
 
 		// {

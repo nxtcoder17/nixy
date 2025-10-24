@@ -80,12 +80,15 @@ nix run github:nxtcoder17/nixy -- shell
 No more complex Nix expressions. Just list what you need:
 
 ```yaml
-nixpkgs: abc123  # Optional: pin nixpkgs version
+# Define multiple nixpkgs versions (default is required)
+nixpkgs:
+  default: abc123
+  unstable: def456
 
 packages:
-  - nodejs
+  - nodejs           # Uses default nixpkgs
   - python3
-  - go
+  - unstable#go      # Uses unstable nixpkgs
 
 libraries:      # System libraries
   - zlib
@@ -99,10 +102,17 @@ onShellEnter: |    # Shell initialization
 
 #### Nixpkgs Packages
 ```yaml
+# Define multiple nixpkgs versions
+nixpkgs:
+  default: dfb2f12e899db4876308eba6d93455ab7da304cd
+  stable: abc123
+  unstable: def456
+
 packages:
-  - nodejs                    # Latest from pinned nixpkgs
-  - go_1_21                  # Specific version
-  - nixpkgs/abc123#golang    # Package from specific commit
+  - nodejs                    # Latest from default nixpkgs
+  - go_1_21                  # Specific version from default
+  - stable#golang            # Package from stable nixpkgs
+  - unstable#python314       # Package from unstable nixpkgs
 ```
 
 #### URL Packages
@@ -192,9 +202,13 @@ nixy profile list
 ### 🌐 Mixed Package Sources
 Combine packages from different nixpkgs versions:
 ```yaml
+nixpkgs:
+  default: dfb2f12e899db4876308eba6d93455ab7da304cd
+  older: 9d1fa9fa266631335618373f8faad570df6f9ede
+
 packages:
-  - nodejs                           # From pinned nixpkgs
-  - nixpkgs/9d1fa9fa266631335618373f8faad570df6f9ede#python311        # Python from different commit
+  - nodejs                    # From default nixpkgs
+  - older#python311           # Python from older nixpkgs version
   - name: custom-tool
     url: https://example.com/tool.tar.gz
 ```
@@ -226,6 +240,16 @@ onShellEnter: |
 env:
   NODE_ENV: development
   DATABASE_URL: postgresql://localhost/myapp
+  # Use $$ for literal dollar signs
+  MY_VAR: "some-value-$$-with-dollar"
+  # Reference other env vars (expands at runtime)
+  PATH: "$PATH:/custom/bin"
+
+# Mount additional directories (Docker/Bubblewrap only)
+mounts:
+  - source: /host/path
+    dest: /container/path
+    readOnly: true
 ```
 
 ## Commands
@@ -249,21 +273,22 @@ env:
 
 ### Full-Stack Development
 ```yaml
-nixpkgs: dfb2f12e899db4876308eba6d93455ab7da304cd
+nixpkgs:
+  default: dfb2f12e899db4876308eba6d93455ab7da304cd
 
 packages:
   # Backend
   - nodejs
   - postgresql_15
-  
+
   # Frontend
   - pnpm
   - cypress
-  
+
   # Tools
   - name: stripe-cli
     url: https://github.com/stripe/stripe-cli/releases/download/v1.19.1/stripe_1.19.1_linux_x86_64.tar.gz
-    
+
 libraries:
   - postgresql
 
@@ -271,13 +296,15 @@ libraries:
 
 ### Python Data Science
 ```yaml
-nixpkgs: dfb2f12e899db4876308eba6d93455ab7da304cd
+nixpkgs:
+  default: dfb2f12e899db4876308eba6d93455ab7da304cd
+  cuda: abc123                                  # Specific version for CUDA
 
 packages:
   - python311
   - poetry
   - jupyter
-  - nixpkgs/abc123#cudaPackages.cudatoolkit  # CUDA from specific commit
+  - cuda#cudaPackages.cudatoolkit              # CUDA from cuda nixpkgs
 
 libraries:
   - zlib
@@ -311,13 +338,16 @@ onShellEnter: |
 
 ### nixy.yml
 ```yaml
-# Pin nixpkgs version (optional)
-nixpkgs: <commit-hash>
+# Define nixpkgs versions (default is required)
+nixpkgs:
+  default: <commit-hash>              # Required
+  stable: <commit-hash>               # Optional
+  unstable: <commit-hash>             # Optional
 
 # Package list
 packages:
-  - <package-name>                    # Simple package
-  - nixpkgs/<commit>#<package>        # From specific commit
+  - <package-name>                    # Simple package (uses default)
+  - <key>#<package>                   # From specific nixpkgs key
   - name: <name>                      # URL package
     url: <url>
     sha256: <hash>                    # Optional
@@ -329,7 +359,15 @@ libraries:
 
 # Environment variables
 env:
-  KEY: value
+  KEY: value                          # Static value
+  PATH: "$PATH:/custom"               # Variable expansion
+  ESCAPED: "value-$$-literal"         # Use $$ for literal $
+
+# Additional mounts (Docker/Bubblewrap only)
+mounts:
+  - source: /host/path
+    dest: /container/path
+    readOnly: true                    # Optional, defaults to false
 
 # Shell initialization
 onShellEnter: |

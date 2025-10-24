@@ -20,16 +20,13 @@ func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, ctx.PWD),
 
 		EnvVars: executorEnvVars{
-			User:           "nixy",
-			Home:           fakeHomeMountedPath,
-			Term:           os.Getenv("TERM"),
-			TermInfo:       os.Getenv("TERMINFO"),
-			XDGSessionType: os.Getenv("XDG_SESSION_TYPE"),
-			XDGCacheHome:   filepath.Join(fakeHomeMountedPath, ".cache"),
-			XDGDataHome:    filepath.Join(fakeHomeMountedPath, ".local", "share"),
-			Path: []string{
-				"/nixy",
-			},
+			User:                  "nixy",
+			Home:                  fakeHomeMountedPath,
+			Term:                  os.Getenv("TERM"),
+			TermInfo:              os.Getenv("TERMINFO"),
+			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
+			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
+			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			NixyWorkspaceDir:      ctx.PWD,
 			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
 			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
@@ -55,13 +52,13 @@ func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*ex
 		// Mount Home
 		"-v", addMount(nixy.profile.FakeHomeDir, nixy.executorArgs.FakeHomeMountedPath, "z"),
 		"-e", "HOME=" + nixy.executorArgs.FakeHomeMountedPath,
-		"-e", "PATH=" + strings.Join(nixy.executorArgs.EnvVars.Path, ":"),
 
 		// Mount current flake directory
 		"-v", addMount(nixy.executorArgs.WorkspaceFlakeDirHostPath, nixy.executorArgs.WorkspaceFlakeDirMountedPath, "Z"),
 
 		// STEP: nixy and nix binary mounts
 		"--tmpfs", "/nixy:ro",
+		"-e", "PATH=/nixy",
 		"--tmpfs", fmt.Sprintf("/bin:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
 		"--tmpfs", fmt.Sprintf("/usr:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
 		"-v", addMount(ctx.NixyBinPath, "/nixy/nixy", "ro", "z"),
@@ -78,11 +75,15 @@ func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*ex
 		"-v", addMount(nixy.executorArgs.EnvVars.TermInfo, nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
 	}
 
-	for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
-		dockerCmd = append(dockerCmd, "-e", k+"="+v)
+	for _, mount := range nixy.Mounts {
+		attrs := []string{"z"}
+		if mount.ReadOnly {
+			attrs = append(attrs, "ro")
+		}
+		dockerCmd = append(dockerCmd, "-v", addMount(mount.Source, mount.Destination, attrs...))
 	}
 
-	for k, v := range nixy.Env {
+	for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
 		dockerCmd = append(dockerCmd, "-e", k+"="+v)
 	}
 

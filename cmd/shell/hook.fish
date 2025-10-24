@@ -45,7 +45,7 @@ function __nixy_shell_activate --on-variable PWD --on-event fish_prompt
 
   # Launch nixy shell on ENTER or timeout
   if test $exit_code -eq 0 -a -z "$key"; or test $exit_code -gt 128
-    nixy shell
+    exec nixy shell
   end
   set -g last_dir "$PWD"
 end

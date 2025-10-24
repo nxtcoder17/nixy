@@ -41,6 +41,15 @@ func init() {
 			b, err := json.Marshal(v)
 			return string(b), err
 		},
+		"squote": func(str ...interface{}) string {
+			out := make([]string, 0, len(str))
+			for _, s := range str {
+				if s != nil {
+					out = append(out, fmt.Sprintf("'%v'", s))
+				}
+			}
+			return strings.Join(out, " ")
+		},
 	})
 
 	if _, err := t.Parse(profileNixyYamlContent); err != nil {
@@ -72,8 +81,8 @@ type URLPackage struct {
 }
 
 type WorkspaceFlakeParams struct {
-	NixPkgsDefaultCommit string
-	NixPkgsCommits       []string
+	NixPkgsCommitsList []string
+	NixPkgsCommitsMap  map[string]string
 
 	PackagesMap  map[string][]string
 	LibrariesMap map[string][]string
@@ -84,6 +93,8 @@ type WorkspaceFlakeParams struct {
 	Builds map[string]WorkspaceFlakePackgeBuild
 
 	OSArch string
+
+	EnvVars map[string]string
 }
 
 type WorkspaceFlakePackgeBuild struct {
