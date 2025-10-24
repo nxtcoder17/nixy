@@ -19,18 +19,21 @@ const (
 	buildHookFileName = "build-hook.sh"
 )
 
-func (nix *Nixy) writeWorkspaceFlake(ctx *Context, extraPackages []*NormalizedPackage, extraLibraries []string) error {
+func (nix *Nixy) writeWorkspaceFlake(
+	ctx *Context, extraPackages []*NormalizedPackage, extraLibraries []string, env map[string]string,
+) error {
 	if !nix.hasHashChanged {
 		slog.Debug("nixy.yml hash has not changed, skipped writing flake.nix")
 		return nil
 	}
 
 	input := WorkspaceFlakeGenParams{
-		NixPkgsDefaultCommit: nix.NixPkgs,
-		WorkspaceDirPath:     ctx.PWD,
-		Packages:             []*NormalizedPackage{},
-		Libraries:            []string{},
-		Builds:               map[string]Build{},
+		NixPkgs:          nix.NixPkgs,
+		WorkspaceDirPath: ctx.PWD,
+		Packages:         []*NormalizedPackage{},
+		Libraries:        []string{},
+		Builds:           map[string]Build{},
+		EnvVars:          env,
 	}
 
 	input.Packages = append(input.Packages, extraPackages...)
@@ -80,17 +83,15 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 
 		n.hasHashChanged = n.hasHashChanged || profileNix.hasHashChanged
 		for i := range profileNix.Packages {
-			if profileNix.Packages[i].NixPackage != nil && profileNix.Packages[i].NixPackage.Commit == "" {
-				profileNix.Packages[i].NixPackage.Commit = profileNix.NixPkgs
+			if profileNix.Packages[i].NixPackage != nil {
+				// INFO: forces all profile level packages to follow the default from project level nixpkgs
+				profileNix.Packages[i].NixPackage.Commit = "default"
 			}
 		}
+
 		profilePackages = profileNix.Packages
 		profileLibs = profileNix.Libraries
 		profileEnvVars = profileNix.Env
-	}
-
-	if err := n.writeWorkspaceFlake(ctx, profilePackages, profileLibs); err != nil {
-		return nil, err
 	}
 
 	if program == "" {
@@ -101,26 +102,37 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 		}
 	}
 
-	scripts := []string{}
+	executorEnv := n.executorArgs.EnvVars.toMap(ctx)
 
-	envMap := n.executorArgs.EnvVars.toMap(ctx)
-	maps.Copy(envMap, profileEnvVars)
-	maps.Copy(envMap, n.Env)
+	userEnv := make(map[string]string, len(profileEnvVars)+len(n.Env))
+	maps.Copy(userEnv, profileEnvVars)
+	maps.Copy(userEnv, n.Env)
 
-	keys := make([]string, 0, len(envMap))
-	for k := range envMap {
+	keys := make([]string, 0, len(userEnv))
+	for k := range userEnv {
 		keys = append(keys, k)
 	}
-
 	slices.Sort(keys)
 
-	for _, k := range keys {
-		scripts = append(scripts, os.ExpandEnv(fmt.Sprintf("export %s=%q", k, envMap[k])))
+	for k := range userEnv {
+		expanded := os.Expand(
+			strings.ReplaceAll(userEnv[k], "$$", "__DOLLOR_ESCAPE__"), func(s string) string {
+				if v, ok := executorEnv[s]; ok {
+					return v
+				}
+				return os.Getenv(s)
+			},
+		)
+		userEnv[k] = strings.ReplaceAll(expanded, "__DOLLOR_ESCAPE__", "$")
 	}
 
-	scripts = append(scripts,
+	if err := n.writeWorkspaceFlake(ctx, profilePackages, profileLibs, userEnv); err != nil {
+		return nil, err
+	}
+
+	scripts := []string{
 		fmt.Sprintf("cd %s", n.executorArgs.WorkspaceFlakeDirMountedPath),
-	)
+	}
 
 	if n.hasHashChanged {
 		scripts = append(scripts,
@@ -134,12 +146,12 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 
 	nixShell := []string{"shell"}
 
-	if ctx.NixyMode != LocalMode {
-		nixShell = append(nixShell, "--ignore-environment")
-	}
+	// if ctx.NixyMode == LocalMode {
+	// 	nixShell = append(nixShell, "--ignore-environment")
+	// }
 
 	nixShell = append(nixShell,
-		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs),
+		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs["default"]),
 		"--command",
 		"bash",
 		"-c",
@@ -149,6 +161,13 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	cmd, err := n.PrepareShellCommand(ctx, n.executorArgs.NixBinaryMountedPath, nixShell...)
 	if err != nil {
 		return nil, err
+	}
+
+	if ctx.NixyMode == LocalMode {
+		cmd.Env = append(cmd.Env, "NIXY_SHELL=true")
+		cmd.Env = append(cmd.Env, os.Environ()...)
+	} else {
+		cmd.Env = append(cmd.Env, n.executorArgs.EnvVars.ToEnviron(ctx)...)
 	}
 
 	cmd.Stdout = os.Stdout

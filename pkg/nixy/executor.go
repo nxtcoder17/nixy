@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 func XDGDataDir() string {
@@ -40,10 +39,9 @@ type executorEnvVars struct {
 	Term     string `json:"TERM"`
 	TermInfo string `json:"TERMINFO"`
 
-	Path           []string `json:"PATH"`
-	XDGSessionType string   `json:"XDG_SESSION_TYPE"`
-	XDGCacheHome   string   `json:"XDG_CACHE_HOME"`
-	XDGDataHome    string   `json:"XDG_DATA_HOME"`
+	XDGSessionType string `json:"XDG_SESSION_TYPE"`
+	XDGCacheHome   string `json:"XDG_CACHE_HOME"`
+	XDGDataHome    string `json:"XDG_DATA_HOME"`
 
 	NixyOS string `json:"NIXY_OS"`
 
@@ -92,7 +90,6 @@ func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
 		"NIXY_USE_PROFILE": fmt.Sprintf("%v", ctx.NixyUseProfile),
 
 		"NIXY_SHELL":               "true",
-		"PATH":                     strings.Join(e.Path, ":"),
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,
 		"NIXY_WORKSPACE_FLAKE_DIR": e.NixyWorkspaceFlakeDir,
 		"NIXY_BUILD_HOOK":          e.NixyBuildHook,

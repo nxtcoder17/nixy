@@ -22,12 +22,12 @@ type Profile struct {
 }
 
 var (
-	ProfileSandboxMountPath        string = "/profile"
-	WorkspaceDirSandboxMountPath   string = "/workspace"
-	WorkspaceFlakeSandboxMountPath string = "/workspace-flake"
+	ProfileSandboxMountPath        = "/profile"
+	WorkspaceDirSandboxMountPath   = "/workspace"
+	WorkspaceFlakeSandboxMountPath = "/workspace-flake"
 )
 
-func GetProfile(ctx *Context, name string) (*Profile, error) {
+func GetProfile(_ *Context, name string) (*Profile, error) {
 	profileJSONPath := filepath.Join(XDGDataDir(), "profiles", name, "profile.json")
 
 	b, err := os.ReadFile(profileJSONPath)

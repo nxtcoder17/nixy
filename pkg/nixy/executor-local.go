@@ -41,10 +41,10 @@ func UseLocal(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 			XDGSessionType: os.Getenv("XDG_SESSION_TYPE"),
 			XDGCacheHome:   filepath.Join(profile.FakeHomeDir, ".cache"),
 			XDGDataHome:    filepath.Join(profile.FakeHomeDir, ".local", "share"),
-			Path: []string{
-				filepath.Dir(ctx.NixyBinPath),
-				filepath.Dir(nixPath),
-			},
+			// Path: []string{
+			// 	filepath.Dir(ctx.NixyBinPath),
+			// 	filepath.Dir(nixPath),
+			// },
 			NixyWorkspaceDir:      ctx.PWD,
 			NixyWorkspaceFlakeDir: wsHostPath,
 			NixConfDir:            "",
@@ -53,5 +53,7 @@ func UseLocal(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 }
 
 func (nix *Nixy) localShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
-	return exec.CommandContext(ctx, command, args...), nil
+	cmd := exec.CommandContext(ctx, command, args...)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("PATH=%s:%s", filepath.Dir(ctx.NixyBinPath), os.Getenv("PATH")))
+	return cmd, nil
 }
