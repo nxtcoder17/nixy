@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -25,8 +26,33 @@ func (m Mode) String() string {
 	return string(m)
 }
 
+type NixyMount struct {
+	Source      string `yaml:"source"`
+	Destination string `yaml:"dest"`
+	ReadOnly    bool   `yaml:"readOnly,omitempty"`
+}
+
+type NixPkgsMap map[string]string
+
+func (m NixPkgsMap) List() []string {
+	keys := make([]string, 0, len(m))
+	keys = append(keys, "default")
+	for k := range m {
+		if k != "default" {
+			keys = append(keys, k)
+		}
+	}
+
+	slices.Sort(keys[1:])
+	return keys
+}
+
+func (m NixPkgsMap) DefaultCommit() string {
+	return "default"
+}
+
 type NixyConfig struct {
-	NixPkgs   string               `yaml:"nixpkgs"`
+	NixPkgs   NixPkgsMap           `yaml:"nixpkgs"`
 	Packages  []*NormalizedPackage `yaml:"packages"`
 	Libraries []string             `yaml:"libraries,omitempty"`
 
@@ -38,6 +64,9 @@ type NixyConfig struct {
 	OnShellExit string `yaml:"onShellExit,omitempty"`
 
 	Builds map[string]Build `yaml:"builds,omitempty"`
+
+	// Mount is applicable only on bubblewrap and docker modes
+	Mounts []NixyMount `yaml:"mounts,omitempty"`
 }
 
 type Nixy struct {
@@ -151,6 +180,10 @@ func LoadFromFile(parent context.Context, f string) (*Nixy, error) {
 
 	if err := yaml.Unmarshal(b, &nixy.NixyConfig); err != nil {
 		return nil, err
+	}
+
+	if _, ok := nixy.NixPkgs["default"]; !ok {
+		return nil, fmt.Errorf("nixy.yml must have a nixpkgs.default key, containing a nixpkgs hash")
 	}
 
 	hasher := sha256.New()
@@ -296,7 +329,9 @@ func InitNixyFile(parent context.Context, dest string) error {
 	n := Nixy{
 		ConfigFile: &dest,
 		NixyConfig: NixyConfig{
-			NixPkgs: profile.NixPkgsCommitHash,
+			NixPkgs: map[string]string{
+				"default": profile.NixPkgsCommitHash,
+			},
 		},
 	}
 	return n.SyncToDisk()

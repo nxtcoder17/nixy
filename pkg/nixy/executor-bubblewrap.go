@@ -4,11 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 )
 
 func UseBubbleWrap(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
@@ -23,16 +21,13 @@ func UseBubbleWrap(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, ctx.PWD),
 
 		EnvVars: executorEnvVars{
-			User:           "nixy",
-			Home:           fakeHomeMountedPath,
-			Term:           os.Getenv("TERM"),
-			TermInfo:       os.Getenv("TERMINFO"),
-			XDGSessionType: os.Getenv("XDG_SESSION_TYPE"),
-			XDGCacheHome:   filepath.Join(fakeHomeMountedPath, ".cache"),
-			XDGDataHome:    filepath.Join(fakeHomeMountedPath, ".local", "share"),
-			Path: []string{
-				"/nixy",
-			},
+			User:                  "nixy",
+			Home:                  fakeHomeMountedPath,
+			Term:                  os.Getenv("TERM"),
+			TermInfo:              os.Getenv("TERMINFO"),
+			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
+			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
+			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			NixyShell:             "true",
 			NixyWorkspaceDir:      ctx.PWD,
 			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
@@ -83,6 +78,7 @@ func (nixy *Nixy) bubblewrapShell(ctx *Context, command string, args ...string) 
 
 		// nixy and nix binary mounts
 		"--tmpfs", "/nixy",
+		"--setenv", "PATH", "/nixy",
 		"--tmpfs", "/bin",
 		"--tmpfs", "/usr",
 		"--ro-bind", nixy.profile.StaticNixBinPath, "/nixy/nix",
@@ -104,23 +100,19 @@ func (nixy *Nixy) bubblewrapShell(ctx *Context, command string, args ...string) 
 
 		// INFO: it is just to keep the workspace at /workspace in the sandbox
 		"--bind", ctx.PWD, WorkspaceDirSandboxMountPath,
-		"--clearenv",
+		// "--clearenv",
 	}
 
-	// bwrapArgs = append(bwrapArgs, "--setenv", "PATH", strings.Join(nixy.executorArgs.EnvVars.Path, ":"))
-
-	envMap := nixy.executorArgs.EnvVars.toMap(ctx)
-	maps.Copy(envMap, nixy.Env)
-
-	keys := make([]string, 0, len(envMap))
-	for k := range envMap {
-		keys = append(keys, k)
+	for _, mount := range nixy.Mounts {
+		flag := "--bind"
+		if mount.ReadOnly {
+			flag = "--ro-bind"
+		}
+		bwrapArgs = append(bwrapArgs, flag, mount.Source, mount.Destination)
 	}
 
-	slices.Sort(keys)
-
-	for _, k := range keys {
-		bwrapArgs = append(bwrapArgs, "--setenv", k, os.ExpandEnv(envMap[k]))
+	for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
+		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
 	}
 
 	bwrapArgs = append(bwrapArgs, command)

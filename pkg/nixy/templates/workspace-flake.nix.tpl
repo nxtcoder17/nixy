@@ -1,62 +1,58 @@
 {{- define "workspace-flake" }}
 
-{{- $nixpkgsList := .NixPkgsCommits }}
+{{- $nixpkgsList := .NixPkgsCommitsList }}
+{{- $nixpkgsMap := .NixPkgsCommitsMap }}
 {{- $packagesMap := .PackagesMap }}
 {{- $librariesMap := .LibrariesMap }}
 {{- $urlPackages := .URLPackages }}
 {{- $projectDir := .WorkspaceDir }}
-{{- $nixpkgsDefaultCommit := .NixPkgsDefaultCommit -}}
 {{- $builds := .Builds -}}
 {{- $osArch := .OSArch }}
+
+{{- $nixpkgsDefaultCommit := index $nixpkgsList 0 -}}
 {
   description = "nixy project development workspace";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/{{$nixpkgsDefaultCommit}}";
     flake-utils.url = "github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b";
 
-    {{- range $_, $v := $nixpkgsList }}
-    nixpkgs_{{slice $v 0 7}}.url = "github:nixos/nixpkgs/{{$v}}";
+    {{- range $k := $nixpkgsList }}
+    nixpkgs_{{$k}}.url = "github:nixos/nixpkgs/{{index $nixpkgsMap $k}}";
     {{- end }}
-
-    nixpkgs-unstable.follows = "nixpkgs";
   };
 
   outputs = {
-      self, nixpkgs, flake-utils,
-      nixpkgs-unstable,
-      {{- range $_, $v := $nixpkgsList -}}
-      nixpkgs_{{slice $v 0 7}},
+      self, flake-utils,
+      {{- range $v := $nixpkgsList -}}
+      nixpkgs_{{$v}},
       {{- end }}
     }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs {
-          inherit system; 
+        pkgs = import nixpkgs_{{$nixpkgsDefaultCommit}} {
+          inherit system;
           config.allowUnfree = true;
         };
 
-        {{- range $k := $nixpkgsList -}}
-        pkgs_{{slice $k 0 7}} = import nixpkgs_{{slice $k 0 7}} {
+        {{ range $k := $nixpkgsList -}}
+        pkgs_{{$k}} = import nixpkgs_{{$k}} {
           inherit system;
           config.allowUnfree = true;
         };
         {{- end }}
 
         packages = [
-            {{- range $k, $v := $packagesMap }}
-            {{- range $item := $v }}
-            pkgs_{{slice $k 0 7}}.{{$item}}
-            {{- end }}
-            {{- end }}
-          ]
-          ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.glibcLocales ]) 
-          ;
+          {{- range $k := $nixpkgsList -}}
+          {{- range $item := index $packagesMap $k }}
+          pkgs_{{$k}}.{{$item}}
+          {{- end }}
+          {{- end }}
+        ] ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.glibcLocales ]);
 
         libraries = pkgs.lib.makeLibraryPath [
-          {{- range $k, $v := $librariesMap }}
-          {{- range $item := $v }}
-          pkgs_{{slice $k 0 7}}.{{$item}}
+          {{- range $k := $nixpkgsList -}}
+          {{- range $item := index $librariesMap $k }}
+          pkgs_{{$k}}.{{$item}}
           {{- end }}
           {{- end }}
         ];
@@ -194,6 +190,10 @@
               export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
             fi
 
+            {{- range $k, $v := .EnvVars }}
+            export {{$k}}="{{$v}}"
+            {{- end }}
+
             if [ -e shell-hook.sh ]; then
               source "shell-hook.sh"
             fi
@@ -213,7 +213,7 @@
               paths = [
                 {{- range $k, $v := $build.PackagesMap }}
                 {{- range $item := $v }}
-                pkgs_{{slice $k 0 7}}.{{$item}}
+                pkgs_{{$k}}.{{$item}}
                 {{- end }}
                 {{- end }}
               ];
