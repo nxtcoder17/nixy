@@ -49,9 +49,10 @@ func exists(path string) bool {
 	return false
 }
 
-func (nixy *Nixy) bubblewrapShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	bwrapArgs := []string{
 		// no-zombie processes
+		// "--clearenv",
 		"--die-with-parent",
 		// "--new-session",
 
@@ -100,20 +101,46 @@ func (nixy *Nixy) bubblewrapShell(ctx *Context, command string, args ...string) 
 
 		// INFO: it is just to keep the workspace at /workspace in the sandbox
 		"--bind", ctx.PWD, WorkspaceDirSandboxMountPath,
-		// "--clearenv",
 	}
 
-	for _, mount := range nixy.Mounts {
+	mounts := nixy.Mounts
+	if ctx.NixyUseProfile {
+		mounts = append(mounts, nixy.profileNixy.Mounts...)
+	}
+
+	executorEnv := nixy.executorArgs.EnvVars.toMap(ctx)
+
+	for _, mount := range mounts {
 		flag := "--bind"
 		if mount.ReadOnly {
 			flag = "--ro-bind"
 		}
-		bwrapArgs = append(bwrapArgs, flag, mount.Source, mount.Destination)
+
+		bwrapArgs = append(bwrapArgs,
+			flag,
+			os.ExpandEnv(mount.Source),
+			os.Expand(mount.Destination, func(s string) string {
+				if v, ok := executorEnv[s]; ok {
+					return v
+				}
+
+				if v, ok := nixy.Env[s]; ok {
+					return v
+				}
+
+				if nixy.profileNixy != nil {
+					if v, ok := nixy.profileNixy.Env[s]; ok {
+						return v
+					}
+				}
+
+				return ""
+			}))
 	}
 
-	for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
-		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
-	}
+	// for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
+	// 	bwrapArgs = append(bwrapArgs, "--setenv", k, v)
+	// }
 
 	bwrapArgs = append(bwrapArgs, command)
 	bwrapArgs = append(bwrapArgs, args...)

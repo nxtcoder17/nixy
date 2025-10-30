@@ -2,10 +2,10 @@ package nixy
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 )
 
 func XDGDataDir() string {
@@ -17,7 +17,7 @@ func XDGDataDir() string {
 	return filepath.Join(xdgDataHome, "nixy")
 }
 
-func (nixy *Nixy) PrepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+func (nixy *NixyWrapper) PrepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	switch ctx.NixyMode {
 	case LocalMode:
 		return nixy.localShell(ctx, command, args...)
@@ -69,22 +69,6 @@ func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
 		"XDG_CACHE_HOME":   e.XDGCacheHome,
 		"XDG_DATA_HOME":    e.XDGDataHome,
 
-		// Nixy Env Vars
-		"NIXY_OS":   runtime.GOOS,
-		"NIXY_ARCH": runtime.GOARCH,
-		"NIXY_ARCH_FULL": func() string {
-			switch runtime.GOARCH {
-			case "amd64":
-				return "x86_64"
-			case "386":
-				return "i686"
-			case "arm64":
-				return "aarch64"
-			default:
-				return runtime.GOARCH
-			}
-		}(),
-
 		"NIXY_EXECUTOR":    string(ctx.NixyMode),
 		"NIXY_PROFILE":     ctx.NixyProfile,
 		"NIXY_USE_PROFILE": fmt.Sprintf("%v", ctx.NixyUseProfile),
@@ -99,6 +83,7 @@ func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
 		m["NIX_CONF_DIR"] = e.NixConfDir
 	}
 
+	maps.Copy(m, osArchEnv)
 	return m
 }
 

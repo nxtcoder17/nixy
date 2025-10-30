@@ -19,7 +19,7 @@ const (
 	buildHookFileName = "build-hook.sh"
 )
 
-func (nix *Nixy) writeWorkspaceFlake(
+func (nix *NixyWrapper) writeWorkspaceFlake(
 	ctx *Context, extraPackages []*NormalizedPackage, extraLibraries []string, env map[string]string,
 ) error {
 	if !nix.hasHashChanged {
@@ -70,28 +70,22 @@ func (nix *Nixy) writeWorkspaceFlake(
 	return os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "flake.nix"), flake, 0o644)
 }
 
-func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
+func (n *NixyWrapper) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	var profilePackages []*NormalizedPackage
 	var profileLibs []string
 	var profileEnvVars map[string]string
 
 	if ctx.NixyUseProfile {
-		profileNix, err := LoadFromFile(ctx, n.profile.ProfileNixyYAMLPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read from profile's nixy.yml: %w", err)
-		}
-
-		n.hasHashChanged = n.hasHashChanged || profileNix.hasHashChanged
-		for i := range profileNix.Packages {
-			if profileNix.Packages[i].NixPackage != nil {
+		for i := range n.profileNixy.Packages {
+			if n.profileNixy.Packages[i].NixPackage != nil {
 				// INFO: forces all profile level packages to follow the default from project level nixpkgs
-				profileNix.Packages[i].NixPackage.Commit = "default"
+				n.profileNixy.Packages[i].NixPackage.Commit = "default"
 			}
 		}
 
-		profilePackages = profileNix.Packages
-		profileLibs = profileNix.Libraries
-		profileEnvVars = profileNix.Env
+		profilePackages = n.profileNixy.Packages
+		profileLibs = n.profileNixy.Libraries
+		profileEnvVars = n.profileNixy.Env
 	}
 
 	if program == "" {
@@ -146,10 +140,6 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 
 	nixShell := []string{"shell"}
 
-	// if ctx.NixyMode == LocalMode {
-	// 	nixShell = append(nixShell, "--ignore-environment")
-	// }
-
 	nixShell = append(nixShell,
 		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs["default"]),
 		"--command",
@@ -177,7 +167,7 @@ func (n *Nixy) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func (n *Nixy) Shell(ctx *Context, program string) error {
+func (n *NixyWrapper) Shell(ctx *Context, program string) error {
 	start := time.Now()
 	cmd, err := n.nixShellExec(ctx, program)
 	if err != nil {

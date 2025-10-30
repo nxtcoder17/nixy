@@ -52,7 +52,7 @@ func UseLocal(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 	}, nil
 }
 
-func (nix *Nixy) localShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+func (nix *NixyWrapper) localShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Env = append(cmd.Env, fmt.Sprintf("PATH=%s:%s", filepath.Dir(ctx.NixyBinPath), os.Getenv("PATH")))
 	return cmd, nil

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
+	"golang.org/x/term"
 )
 
 // Profile represents a general profile that all executors can use
@@ -30,6 +31,10 @@ var (
 func GetProfile(_ *Context, name string) (*Profile, error) {
 	profileJSONPath := filepath.Join(XDGDataDir(), "profiles", name, "profile.json")
 
+	if !exists(profileJSONPath) {
+		return nil, fmt.Errorf("profile path does not exist")
+	}
+
 	b, err := os.ReadFile(profileJSONPath)
 	if err != nil {
 		return nil, err
@@ -52,19 +57,22 @@ func NewProfile(ctx *Context, name string) (*Profile, error) {
 
 	profilePath := filepath.Join(XDGDataDir(), "profiles", name)
 
-	nixpkgsHash, err := fetchCurrentNixpkgsHash(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current nixpkgs hash: %w", err)
+	var nixPkgsHash string
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		var err error
+		nixPkgsHash, err = fetchCurrentNixpkgsHash(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current nixpkgs hash: %w", err)
+		}
 	}
 
 	nixDir := filepath.Join(profilePath, "nix")
-
 	fakeHomeDir := filepath.Join(profilePath, "fake-home")
 
 	p := Profile{
 		Name:                name,
 		ProfilePath:         profilePath,
-		NixPkgsCommitHash:   nixpkgsHash,
+		NixPkgsCommitHash:   nixPkgsHash,
 		WorkspacesDir:       filepath.Join(profilePath, "workspaces"),
 		FakeHomeDir:         fakeHomeDir,
 		NixDir:              nixDir,
@@ -80,7 +88,7 @@ func NewProfile(ctx *Context, name string) (*Profile, error) {
 		return nil, fmt.Errorf("failed to save profile into a profile.json: %w", err)
 	}
 
-	b, err := templates.RenderProfileNixyYAML(templates.ProfileNixyYAMLParams{NixPkgsCommit: nixpkgsHash})
+	b, err := templates.RenderProfileNixyYAML(templates.ProfileNixyYAMLParams{NixPkgsCommit: nixPkgsHash})
 	if err != nil {
 		return nil, err
 	}

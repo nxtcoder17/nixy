@@ -245,7 +245,7 @@ func main() {
 	}
 }
 
-func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.Nixy, error) {
+func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.NixyWrapper, error) {
 	if c.IsSet("file") {
 		return nixy.LoadFromFile(ctx, c.String("file"))
 	}

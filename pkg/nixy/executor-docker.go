@@ -36,7 +36,7 @@ func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 	return &dockerCfg, nil
 }
 
-func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	addMount := func(src, dest string, flags ...string) string {
 		return fmt.Sprintf("%s:%s:%s", src, dest, strings.Join(flags, ","))
 	}
