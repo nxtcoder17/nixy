@@ -59,10 +59,6 @@ func NewContext(parent context.Context, workspaceDir string) (*Context, error) {
 		return nil, err
 	}
 
-	if v, ok := os.LookupEnv("NIXY_SHELL"); ok {
-		ctx.InNixyShell = strings.EqualFold(v, "true")
-	}
-
 	return &ctx, nil
 }
 

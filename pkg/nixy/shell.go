@@ -19,6 +19,40 @@ const (
 	buildHookFileName = "build-hook.sh"
 )
 
+// getProfilePackages returns profile packages if NIXY_USE_PROFILE is enabled
+func (n *NixyWrapper) getProfilePackages(ctx *Context) []*NormalizedPackage {
+	if !ctx.NixyUseProfile || n.profileNixy == nil {
+		return nil
+	}
+
+	packages := make([]*NormalizedPackage, len(n.profileNixy.Packages))
+	for i := range n.profileNixy.Packages {
+		pkg := n.profileNixy.Packages[i]
+		if pkg.NixPackage != nil {
+			// INFO: forces all profile level packages to follow the default from project level nixpkgs
+			pkg.NixPackage.Commit = "default"
+		}
+		packages[i] = pkg
+	}
+	return packages
+}
+
+// getProfileLibraries returns profile libraries if NIXY_USE_PROFILE is enabled
+func (n *NixyWrapper) getProfileLibraries(ctx *Context) []string {
+	if !ctx.NixyUseProfile || n.profileNixy == nil {
+		return nil
+	}
+	return n.profileNixy.Libraries
+}
+
+// getProfileEnvVars returns profile environment variables if NIXY_USE_PROFILE is enabled
+func (n *NixyWrapper) getProfileEnvVars(ctx *Context) map[string]string {
+	if !ctx.NixyUseProfile || n.profileNixy == nil {
+		return nil
+	}
+	return n.profileNixy.Env
+}
+
 func (nix *NixyWrapper) writeWorkspaceFlake(
 	ctx *Context, extraPackages []*NormalizedPackage, extraLibraries []string, env map[string]string,
 ) error {
@@ -71,22 +105,10 @@ func (nix *NixyWrapper) writeWorkspaceFlake(
 }
 
 func (n *NixyWrapper) nixShellExec(ctx *Context, program string) (*exec.Cmd, error) {
-	var profilePackages []*NormalizedPackage
-	var profileLibs []string
-	var profileEnvVars map[string]string
-
-	if ctx.NixyUseProfile {
-		for i := range n.profileNixy.Packages {
-			if n.profileNixy.Packages[i].NixPackage != nil {
-				// INFO: forces all profile level packages to follow the default from project level nixpkgs
-				n.profileNixy.Packages[i].NixPackage.Commit = "default"
-			}
-		}
-
-		profilePackages = n.profileNixy.Packages
-		profileLibs = n.profileNixy.Libraries
-		profileEnvVars = n.profileNixy.Env
-	}
+	// Extract profile-related data (only when NIXY_USE_PROFILE is enabled)
+	profilePackages := n.getProfilePackages(ctx)
+	profileLibs := n.getProfileLibraries(ctx)
+	profileEnvVars := n.getProfileEnvVars(ctx)
 
 	if program == "" {
 		if v, ok := os.LookupEnv("SHELL"); ok {

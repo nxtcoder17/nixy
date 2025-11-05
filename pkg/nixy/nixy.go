@@ -88,9 +88,10 @@ type NixyWrapper struct {
 	hasHashChanged bool
 	executorArgs   *ExecutorArgs `yaml:"-"`
 	sync.Mutex     `yaml:"-"`
-	Logger         *slog.Logger `yaml:"-"`
-	profile        *Profile     `yaml:"-"`
-	profileNixy    *Nixy        `yaml:"-"`
+	Logger         *slog.Logger  `yaml:"-"`
+	runtimePaths   *RuntimePaths `yaml:"-"` // Always set (workspace infrastructure)
+	profile        *Profile      `yaml:"-"` // Only set when NIXY_USE_PROFILE=true
+	profileNixy    *Nixy         `yaml:"-"` // Only set when NIXY_USE_PROFILE=true
 
 	PWD string
 
@@ -234,12 +235,13 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 		return nil, err
 	}
 
-	hasHashChanged, err := compareAndSaveHash(filepath.Join(flakeDirPath(ctx.NixyProfile), "nixy.yml.sha256"), nc.sha256Sum)
+	// Always create runtime paths (needed for workspace flake storage)
+	runtimePaths, err := NewRuntimePaths(ctx.NixyProfile)
 	if err != nil {
 		return nil, err
 	}
 
-	profile, err := NewProfile(ctx, ctx.NixyProfile)
+	hasHashChanged, err := compareAndSaveHash(filepath.Join(flakeDirPath(ctx.NixyProfile), "nixy.yml.sha256"), nc.sha256Sum)
 	if err != nil {
 		return nil, err
 	}
@@ -247,13 +249,20 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 	nixy := NixyWrapper{
 		Context:        ctx,
 		hasHashChanged: hasHashChanged,
-		profile:        profile,
+		runtimePaths:   runtimePaths,
 		Logger:         slog.Default(),
 		PWD:            dir,
 		Nixy:           nc,
 	}
 
+	// Only load profile configuration when NIXY_USE_PROFILE is enabled
 	if ctx.NixyUseProfile {
+		profile, err := NewProfile(ctx, ctx.NixyProfile, runtimePaths)
+		if err != nil {
+			return nil, err
+		}
+		nixy.profile = profile
+
 		nc, err := parseAndSyncNixyFile(ctx, profile.ProfileNixyYAMLPath, nil)
 		if err != nil {
 			return nil, err
@@ -270,17 +279,17 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 
 	switch ctx.NixyMode {
 	case BubbleWrapMode:
-		nixy.executorArgs, err = UseBubbleWrap(ctx, profile)
+		nixy.executorArgs, err = UseBubbleWrap(ctx, runtimePaths)
 		if err != nil {
 			return nil, err
 		}
 	case DockerMode:
-		nixy.executorArgs, err = UseDocker(ctx, profile)
+		nixy.executorArgs, err = UseDocker(ctx, runtimePaths)
 		if err != nil {
 			return nil, err
 		}
 	case LocalMode:
-		nixy.executorArgs, err = UseLocal(ctx, profile)
+		nixy.executorArgs, err = UseLocal(ctx, runtimePaths)
 		if err != nil {
 			return nil, err
 		}
@@ -372,7 +381,12 @@ func InitNixyFile(parent context.Context, dest string) error {
 		return err
 	}
 
-	profile, err := NewProfile(ctx, ctx.NixyProfile)
+	runtimePaths, err := NewRuntimePaths(ctx.NixyProfile)
+	if err != nil {
+		return err
+	}
+
+	profile, err := NewProfile(ctx, ctx.NixyProfile, runtimePaths)
 	if err != nil {
 		return err
 	}

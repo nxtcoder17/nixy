@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
+func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 	fakeHomeMountedPath := "/home/nixy"
 
 	dockerCfg := ExecutorArgs{
@@ -17,7 +17,7 @@ func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
 		WorkspaceFlakeDirMountedPath: WorkspaceFlakeSandboxMountPath,
-		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, ctx.PWD),
+		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(runtimePaths.WorkspacesDir, ctx.PWD),
 
 		EnvVars: executorEnvVars{
 			User:                  "nixy",
@@ -29,7 +29,7 @@ func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			NixyWorkspaceDir:      ctx.PWD,
 			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
-			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
+			NixConfDir:            filepath.Join(runtimePaths.FakeHomeDir, ".config", "nix"),
 		},
 	}
 
@@ -47,10 +47,10 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
 		// STEP: profile flake dir
-		"-v", addMount(nixy.profile.ProfilePath, nixy.executorArgs.ProfileDirMountedPath, "z"),
+		"-v", addMount(nixy.runtimePaths.BasePath, nixy.executorArgs.ProfileDirMountedPath, "z"),
 
 		// Mount Home
-		"-v", addMount(nixy.profile.FakeHomeDir, nixy.executorArgs.FakeHomeMountedPath, "z"),
+		"-v", addMount(nixy.runtimePaths.FakeHomeDir, nixy.executorArgs.FakeHomeMountedPath, "z"),
 		"-e", "HOME=" + nixy.executorArgs.FakeHomeMountedPath,
 
 		// Mount current flake directory
@@ -62,10 +62,10 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		"--tmpfs", fmt.Sprintf("/bin:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
 		"--tmpfs", fmt.Sprintf("/usr:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
 		"-v", addMount(ctx.NixyBinPath, "/nixy/nixy", "ro", "z"),
-		"-v", addMount(nixy.profile.StaticNixBinPath, "/nixy/nix", "ro", "z"),
+		"-v", addMount(nixy.runtimePaths.StaticNixBinPath, "/nixy/nix", "ro", "z"),
 
 		// STEP: Nix Store
-		"-v", addMount(nixy.profile.NixDir, nixy.executorArgs.NixDirMountedPath, "z"),
+		"-v", addMount(nixy.runtimePaths.NixDir, nixy.executorArgs.NixDirMountedPath, "z"),
 
 		// STEP: project dir
 		"-v", addMount(nixy.PWD, nixy.PWD, "Z"),
@@ -87,8 +87,8 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		dockerCmd = append(dockerCmd, "-e", k+"="+v)
 	}
 
-	if !exists(nixy.profile.StaticNixBinPath) {
-		if err := downloadStaticNixBinary(ctx, nixy.profile.StaticNixBinPath); err != nil {
+	if !exists(nixy.runtimePaths.StaticNixBinPath) {
+		if err := downloadStaticNixBinary(ctx, nixy.runtimePaths.StaticNixBinPath); err != nil {
 			return nil, err
 		}
 	}
