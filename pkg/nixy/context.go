@@ -19,28 +19,12 @@ type Context struct {
 	PWD string
 
 	// Nixy Constants
-
 	NixyDataDir string
 }
 
 func (ctx *Context) IsLocalMode() bool {
 	return ctx.NixyMode == LocalMode
 }
-
-type NixyHostDataStore struct {
-	storageDir string
-}
-
-func (n NixyHostDataStore) ProfilePath(profile string) string {
-	return filepath.Join(n.storageDir, "profiles", profile)
-}
-
-// func (ctx *Context) NixyWorkspaceFlakeDir(workspace string) string {
-// 	hasher := md5.New()
-// 	hasher.Write([]byte(ctx.PWD))
-// 	sum := md5.Sum(nil)
-// 	return filepath.Join(workspacesDir, fmt.Sprintf("%x-%s", sum, filepath.Base(ctx.PWD)))
-// }
 
 func NewContext(parent context.Context, workspaceDir string) (*Context, error) {
 	ctx := Context{
@@ -67,18 +51,12 @@ func NewContext(parent context.Context, workspaceDir string) (*Context, error) {
 	if v, ok := os.LookupEnv("NIXY_USE_PROFILE"); ok {
 		v = strings.TrimSpace(v)
 		ctx.NixyUseProfile = v == "1" || strings.EqualFold(v, "true")
-	} else {
-		ctx.NixyUseProfile = false
 	}
 
 	var err error
 	ctx.NixyBinPath, err = getCallerBinPath()
 	if err != nil {
 		return nil, err
-	}
-
-	if v, ok := os.LookupEnv("NIXY_SHELL"); ok {
-		ctx.InNixyShell = strings.EqualFold(v, "true")
 	}
 
 	return &ctx, nil

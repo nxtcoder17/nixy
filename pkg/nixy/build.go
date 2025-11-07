@@ -11,7 +11,7 @@ import (
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 )
 
-func (nixy *Nixy) Build(ctx *Context, target string) error {
+func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 	build, ok := nixy.Builds[target]
 	if !ok {
 		return fmt.Errorf("build target (%s) does not exist", target)
