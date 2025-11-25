@@ -1,57 +1,36 @@
 NIXY_LAST_DIR=""
 
-__nixy_shell_activate() {
-  [[ "$NIXY_LAST_DIR" == "$PWD" ]] && return
-
-  [[ -n "$NIXY_SHELL" ]] && return
-
-  [[ ! -f nixy.yml ]] && return
-
-  # Save cursor position before displaying prompt
-  tput sc
-
-  # Display prompt
-  if command -v gum &>/dev/null; then
-    gum style \
-      --border rounded \
-      --border-foreground 212 \
-      --align center \
-      --width 60 \
-      --margin "1" \
-      --padding "1 2" \
-      --bold \
-      --foreground 147 \
-      "🔧 nixy.yml detected" "" "Press $(gum style --foreground 212 --bold 'ENTER') to launch nixy shell" "$(gum style --foreground 241 'any other key to skip • auto-yes in 2s')"
-  else
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  nixy.yml detected in this directory"
-    echo "  Press ENTER to launch nixy shell"
-    echo "  (any other key to skip • auto-yes in 2s)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+__nixy_shell_hook() {
+  if ([[ "$NIXY_LAST_DIR" == "$PWD" ]] ||
+      [[ -n "$NIXY_SHELL" ]] ||
+      [[ ! -f nixy.yml ]]); then
+    __ps1_cleanup
+    return
   fi
 
-  # Read user input with 2 second timeout
-  local key
-  local exit_code
-  read -t 2 -n 1 -s key
-  exit_code=$?
+  __ps1_add_prefix
 
-  # Restore cursor position and clear to end of screen
-  tput rc
-  tput ed
-
-  # Launch nixy shell on ENTER or timeout
-  if [[ $exit_code -eq 0 && -z "$key" ]] || [[ $exit_code -gt 128 ]]; then
-    nixy shell
-  fi
-
+  nixy shell
   NIXY_LAST_DIR="$PWD"
 }
 
-# Hook into prompt
-if [[ -z "$PROMPT_COMMAND" ]]; then
-  PROMPT_COMMAND="__nixy_shell_activate"
-else
-  PROMPT_COMMAND="__nixy_shell_activate;$PROMPT_COMMAND"
-fi
+__ps1_add_prefix() {
+  __nixy_premod_PS1="$PS1"
+
+  local cyan dim_cyan color_reset
+  cyan="\[\033[0;36m\]"
+  dim_cyan="\[\033[2;36m\]"
+  color_reset="\[\033[0m\]"
+
+  NIXY_PROMPT_PREFIX="${NIXY_PROMPT_PREFIX:-${DIM_CYAN}[${cyan} ᵧ${dim_cyan}]${color_reset}}"
+  PS1="${NIXY_PROMPT_PREFIX}$PS1"
+}
+
+__ps1_cleanup() {
+  if [ -n "$__nixy_premod_PS1" ]; then
+    PS1=$__nixy_premod_PS1
+  fi
+}
+
+# Add or Append to PROMPT_COMMAND env var
+PROMPT_COMMAND="__nixy_shell_hook${PROMPT_COMMAND:+; $PROMPT_COMMAND}"

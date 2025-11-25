@@ -208,6 +208,30 @@ func fetchCurrentNixpkgsHash(ctx context.Context) (string, error) {
 	return result.SHA, nil
 }
 
+func downloader(msg string, reader io.Reader, writer io.Writer) error {
+	totalBytes := 0
+
+	b := make([]byte, 0xffff)
+	for {
+		n, err := reader.Read(b)
+		totalBytes += n
+		fmt.Printf("\033[2K\r%s ... %.2fMBs", msg, float64(totalBytes)/1024/1024)
+		if _, err := writer.Write(b[:n]); err != nil {
+			return fmt.Errorf("failed to write to output path: %w", err)
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				fmt.Printf("\n")
+				fmt.Printf("\033[2K\rDownload Finished ... %.2fMBs\n", float64(totalBytes)/1024/1024)
+				break
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 // downloadStaticNixBinary downloads the static nix binary for bubblewrap profiles
 func downloadStaticNixBinary(ctx context.Context, binPath string) error {
 	_, err := os.Stat(binPath)
@@ -240,27 +264,12 @@ func downloadStaticNixBinary(ctx context.Context, binPath string) error {
 		return err
 	}
 
-	totalBytes := 0
-
-	b := make([]byte, 0xffff)
-	for {
-		n, err := resp.Body.Read(b)
-		totalBytes += n
-		fmt.Printf("\033[2K\rDownloading Static Nix Executable ... %.2fMBs", float64(totalBytes)/1024/1024)
-		if _, err := output.Write(b[:n]); err != nil {
-			return fmt.Errorf("failed to write to output path: %w", err)
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				fmt.Printf("\n")
-				break
-			}
-			return err
-		}
+	if err := downloader("Downloading Static Nix Executable", resp.Body, output); err != nil {
+		return err
 	}
 
-	output.Close()
-	resp.Body.Close()
+	defer output.Close()
+	defer resp.Body.Close()
 
 	return nil
 }

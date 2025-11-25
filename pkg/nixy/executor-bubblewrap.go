@@ -24,7 +24,7 @@ func UseBubbleWrap(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, err
 			User:                  "nixy",
 			Home:                  fakeHomeMountedPath,
 			Term:                  os.Getenv("TERM"),
-			TermInfo:              os.Getenv("TERMINFO"),
+			TermInfo:              "/terminfo",
 			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
 			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
 			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
@@ -75,7 +75,8 @@ func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...s
 		"--ro-bind", "/etc", "/etc",
 
 		// mounts terminfo file, so that your cli tools know and behave according to it
-		"--ro-bind", nixy.executorArgs.EnvVars.TermInfo, nixy.executorArgs.EnvVars.TermInfo,
+		"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
+		"--ro-bind", os.Getenv("TERMINFO"), nixy.executorArgs.EnvVars.TermInfo,
 
 		// nixy and nix binary mounts
 		"--tmpfs", "/nixy",

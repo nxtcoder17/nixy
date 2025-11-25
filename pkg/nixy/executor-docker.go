@@ -23,7 +23,7 @@ func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) 
 			User:                  "nixy",
 			Home:                  fakeHomeMountedPath,
 			Term:                  os.Getenv("TERM"),
-			TermInfo:              os.Getenv("TERMINFO"),
+			TermInfo:              "/terminfo",
 			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
 			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
 			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
@@ -72,7 +72,8 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		"-v", addMount(nixy.PWD, WorkspaceDirSandboxMountPath, "Z"),
 
 		// STEP: mounts terminfo file, so that your cli tools know and behave according to it
-		"-v", addMount(nixy.executorArgs.EnvVars.TermInfo, nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
+		"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
+		"-v", addMount(os.Getenv("TERMINFO"), nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
 	}
 
 	for _, mount := range nixy.Mounts {

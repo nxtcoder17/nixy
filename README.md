@@ -179,6 +179,14 @@ Strong isolation with automatic static nix binary download - **no systemwide Nix
 NIXY_EXECUTOR=bubblewrap nixy shell
 ```
 
+> [!NOTE]
+> Read more at [Enable kernel.unprivileged_userns_clone](https://wiki.archlinux.org/title/Podman#Enable_kernel.unprivileged_userns_clone)
+> check output of `sysctl kernel.unprivileged_userns_clone`
+> if it is not set to 1. Set it to 1, otherwise you won't be able to use bubblewrap
+> ```sh
+    echo "1" > /proc/sys/kernel/sysrq 
+  ```
+
 ### 👤 Profile Management
 
 > [!NOTE]
@@ -249,7 +257,7 @@ env:
 mounts:
   - source: /host/path
     dest: /container/path
-    readOnly: true
+    readonly: true
 ```
 
 ## Commands
@@ -367,7 +375,7 @@ env:
 mounts:
   - source: /host/path
     dest: /container/path
-    readOnly: true                    # Optional, defaults to false
+    readonly: true                    # Optional, defaults to false
 
 # Shell initialization
 onShellEnter: |

@@ -29,7 +29,7 @@ func (m Mode) String() string {
 type NixyMount struct {
 	Source      string `yaml:"source"`
 	Destination string `yaml:"dest"`
-	ReadOnly    bool   `yaml:"readOnly,omitempty"`
+	ReadOnly    bool   `yaml:"readonly,omitempty"`
 }
 
 type NixPkgsMap map[string]string
@@ -69,8 +69,7 @@ type Nixy struct {
 	Mounts []NixyMount `yaml:"mounts,omitempty"`
 
 	// AUTO FILLED
-	sourceFile string `yaml:"-"`
-	sha256Sum  string `yaml:"-"`
+	sha256Sum string `yaml:"-"`
 }
 
 func (n *Nixy) debug() {
@@ -147,7 +146,7 @@ func LoadInNixyShell(parent context.Context) (*InShellNixy, error) {
 	return &nixy, nil
 }
 
-func parseAndSyncNixyFile(_ context.Context, file string, envMap map[string]string) (*Nixy, error) {
+func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read nixy file (%s): %w", file, err)
@@ -177,41 +176,27 @@ func parseAndSyncNixyFile(_ context.Context, file string, envMap map[string]stri
 
 		// Fetch SHA256 if not provided
 		if pkg.URLPackage != nil {
-			pkg.URLPackage.RenderedURL = os.Expand(pkg.URLPackage.URL, func(key string) string {
-				if v, ok := osArchEnv[key]; ok {
-					return v
-				}
-
-				if v, ok := envMap[key]; ok {
-					return v
-				}
-				if v, ok := nixyCfg.Env[key]; ok {
-					return v
-				}
-				return os.Getenv(key)
-			})
-
-			v, hasSha256 := pkg.URLPackage.Sha256[getOSArch()]
-			if hasSha256 && v != "" {
+			v, hasSha256 := pkg.URLPackage.Sources[getOSArch()]
+			if hasSha256 && v.SHA256 != "" {
 				continue
 			}
 
-			hash, err := fetchURLHash(pkg.URLPackage.RenderedURL)
+			hash, err := fetchURLPackageHash(v.URL)
 			if err != nil {
-				return nil, fmt.Errorf("failed to fetch SHA256 hash for (name: %s, url: %s): %w", pkg.URLPackage.Name, pkg.URLPackage.URL, err)
+				return nil, fmt.Errorf("failed to fetch SHA256 hash for (name: %s, url: %s): %w", pkg.URLPackage.Name, v.URL, err)
 			}
 
 			hasPkgUpdates = true
 
-			if pkg.URLPackage.Sha256 == nil {
-				pkg.URLPackage.Sha256 = make(map[string]string, 1)
+			pkg.URLPackage.Sources[getOSArch()] = URLAndSHA{
+				URL:    v.URL,
+				SHA256: hash,
 			}
-			pkg.URLPackage.Sha256[getOSArch()] = hash
 		}
 	}
 
 	if hasPkgUpdates {
-		if err := nixyCfg.SyncToDisk(); err != nil {
+		if err := nixyCfg.SyncToDisk(file); err != nil {
 			return nil, err
 		}
 	}
@@ -225,7 +210,7 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 		return nil, fmt.Errorf("failed to read current working directory: %w", err)
 	}
 
-	nc, err := parseAndSyncNixyFile(parent, f, nil)
+	nc, err := parseAndSyncNixyFile(parent, f)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +248,7 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 		}
 		nixy.profile = profile
 
-		nc, err := parseAndSyncNixyFile(ctx, profile.ProfileNixyYAMLPath, nil)
+		nc, err := parseAndSyncNixyFile(ctx, profile.ProfileNixyYAMLPath)
 		if err != nil {
 			return nil, err
 		}
@@ -328,7 +313,11 @@ func compareAndSaveHash(saveToFile string, sha256Sum string) (bool, error) {
 	return hasHashChanged, nil
 }
 
-func (nixy *Nixy) SyncToDisk() error {
+func (nixy *Nixy) SyncToDisk(file string) error {
+	if file == "" {
+		return fmt.Errorf("required param `file` not provided")
+	}
+
 	// Deduplicate packages while preserving any type
 	upkg := make([]*NormalizedPackage, 0, len(nixy.Packages))
 	set := make(map[string]struct{}, len(nixy.Packages))
@@ -357,18 +346,20 @@ func (nixy *Nixy) SyncToDisk() error {
 
 	nixy.Packages = upkg
 
-	b, err := yaml.Marshal(nixy)
+	output, err := os.OpenFile(file,
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, // flags
+		0o755,                              // permissions
+	)
 	if err != nil {
 		return err
 	}
+	defer output.Close()
 
-	if nixy.sourceFile != "" {
-		if err := os.WriteFile(nixy.sourceFile, b, 0o644); err != nil {
-			return err
-		}
-	}
+	encoder := yaml.NewEncoder(output)
+	encoder.SetIndent(2)
+	defer encoder.Close()
 
-	return nil
+	return encoder.Encode(nixy)
 }
 
 func InitNixyFile(parent context.Context, dest string) error {
@@ -395,7 +386,6 @@ func InitNixyFile(parent context.Context, dest string) error {
 		NixPkgs: map[string]string{
 			"default": profile.NixPkgsCommitHash,
 		},
-		sourceFile: dest,
 	}
-	return n.SyncToDisk()
+	return n.SyncToDisk(dest)
 }
