@@ -70,6 +70,9 @@ type Nixy struct {
 
 	// AUTO FILLED
 	sha256Sum string `yaml:"-"`
+
+	// rawNode holds the original yaml.Node tree for comment preservation
+	rawNode *yaml.Node `yaml:"-"`
 }
 
 func (n *Nixy) debug() {
@@ -152,10 +155,20 @@ func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 		return nil, fmt.Errorf("failed to read nixy file (%s): %w", file, err)
 	}
 
-	var nixyCfg Nixy
-	if err := yaml.Unmarshal(b, &nixyCfg); err != nil {
+	// Parse as yaml.Node to preserve comments and structure
+	var rootNode yaml.Node
+	if err := yaml.Unmarshal(b, &rootNode); err != nil {
 		return nil, err
 	}
+
+	// Also decode into struct for processing
+	var nixyCfg Nixy
+	if err := rootNode.Decode(&nixyCfg); err != nil {
+		return nil, err
+	}
+
+	// Store the raw node for later sync
+	nixyCfg.rawNode = &rootNode
 
 	if _, ok := nixyCfg.NixPkgs["default"]; !ok {
 		return nil, fmt.Errorf("nixy.yml must have a nixpkgs.default key, containing a nixpkgs hash")
@@ -171,7 +184,7 @@ func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 
 	hasPkgUpdates := false
 
-	for _, pkg := range nixyCfg.Packages {
+	for i, pkg := range nixyCfg.Packages {
 		if pkg == nil {
 			continue
 		}
@@ -198,6 +211,12 @@ func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 			pkg.URLPackage.Sources[osArch] = URLAndSHA{
 				URL:    v.URL,
 				SHA256: hash,
+			}
+
+			// Update the SHA256 in the raw node tree
+			if err := updateSHA256InNode(&rootNode, i, osArch, hash); err != nil {
+				slog.Warn("failed to update SHA256 in node tree, will regenerate", "error", err)
+				nixyCfg.rawNode = nil
 			}
 		}
 	}
@@ -321,14 +340,32 @@ func compareAndSaveHash(saveToFile string, sha256Sum string) (bool, error) {
 }
 
 // SyncToDisk writes the nixy config to disk.
-// NOTE: This method is not thread-safe and should only be called from a single goroutine
-// (typically during initialization in parseAndSyncNixyFile or InitNixyFile).
+// When rawNode is set, it preserves the original YAML structure (comments, ordering).
+// When rawNode is nil, it encodes the struct with deduplication (for new files).
 func (nixy *Nixy) SyncToDisk(file string) error {
 	if file == "" {
 		return fmt.Errorf("required param `file` not provided")
 	}
 
-	// Deduplicate packages while preserving any type
+	output, err := os.OpenFile(file,
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+		0o644,
+	)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+
+	encoder := yaml.NewEncoder(output)
+	encoder.SetIndent(2)
+	defer encoder.Close()
+
+	// rawNode path: preserves comments and user's structure, skips deduplication
+	if nixy.rawNode != nil {
+		return encoder.Encode(nixy.rawNode)
+	}
+
+	// Struct path (new files): encode with deduplication
 	upkg := make([]*NormalizedPackage, 0, len(nixy.Packages))
 	set := make(map[string]struct{}, len(nixy.Packages))
 
@@ -356,20 +393,112 @@ func (nixy *Nixy) SyncToDisk(file string) error {
 
 	nixy.Packages = upkg
 
-	output, err := os.OpenFile(file,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o644,
-	)
-	if err != nil {
-		return err
-	}
-	defer output.Close()
-
-	encoder := yaml.NewEncoder(output)
-	encoder.SetIndent(2)
-	defer encoder.Close()
-
 	return encoder.Encode(nixy)
+}
+
+// YAML Node helper functions for traversing and modifying yaml.Node trees
+
+// findMappingValue finds the value node for a given key in a mapping node.
+// Returns nil if the key is not found or the node is not a mapping.
+func findMappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i < len(node.Content)-1; i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// getSequenceItem returns the item at the given index in a sequence node.
+// Returns nil if the index is out of range or the node is not a sequence.
+func getSequenceItem(node *yaml.Node, index int) *yaml.Node {
+	if node == nil || node.Kind != yaml.SequenceNode {
+		return nil
+	}
+	if index < 0 || index >= len(node.Content) {
+		return nil
+	}
+	return node.Content[index]
+}
+
+// setOrInsertScalarField sets the value of a scalar field in a mapping node,
+// or inserts it after the specified key if it doesn't exist.
+// If afterKey is empty or not found, appends to the end.
+func setOrInsertScalarField(node *yaml.Node, key, value, afterKey string) {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return
+	}
+
+	// Check if key already exists
+	for i := 0; i < len(node.Content)-1; i += 2 {
+		if node.Content[i].Value == key {
+			node.Content[i+1].Value = value
+			return
+		}
+	}
+
+	// Key doesn't exist, find position to insert after afterKey
+	insertIdx := len(node.Content) // default: append to end
+	if afterKey != "" {
+		for i := 0; i < len(node.Content)-1; i += 2 {
+			if node.Content[i].Value == afterKey {
+				insertIdx = i + 2 // insert after the value of afterKey
+				break
+			}
+		}
+	}
+
+	// Insert at the computed position
+	newContent := make([]*yaml.Node, 0, len(node.Content)+2)
+	newContent = append(newContent, node.Content[:insertIdx]...)
+	newContent = append(newContent,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: value},
+	)
+	newContent = append(newContent, node.Content[insertIdx:]...)
+	node.Content = newContent
+}
+
+// updateSHA256InNode updates the sha256 field for a URL package in the yaml.Node tree
+func updateSHA256InNode(root *yaml.Node, pkgIndex int, osArch, hash string) error {
+	if root == nil || root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+		return fmt.Errorf("invalid root node")
+	}
+
+	docNode := root.Content[0]
+	if docNode.Kind != yaml.MappingNode {
+		return fmt.Errorf("expected mapping node")
+	}
+
+	packagesNode := findMappingValue(docNode, "packages")
+	if packagesNode == nil || packagesNode.Kind != yaml.SequenceNode {
+		return fmt.Errorf("packages not found or not a sequence")
+	}
+
+	pkgNode := getSequenceItem(packagesNode, pkgIndex)
+	if pkgNode == nil {
+		return fmt.Errorf("package index %d out of range", pkgIndex)
+	}
+	if pkgNode.Kind != yaml.MappingNode {
+		return fmt.Errorf("package is not a mapping (might be a string package)")
+	}
+
+	sourcesNode := findMappingValue(pkgNode, "sources")
+	if sourcesNode == nil || sourcesNode.Kind != yaml.MappingNode {
+		return fmt.Errorf("sources not found or not a mapping")
+	}
+
+	archNode := findMappingValue(sourcesNode, osArch)
+	if archNode == nil || archNode.Kind != yaml.MappingNode {
+		return fmt.Errorf("osArch %s not found or not a mapping", osArch)
+	}
+
+	// Set or insert sha256 after url
+	setOrInsertScalarField(archNode, "sha256", hash, "url")
+	return nil
 }
 
 func InitNixyFile(parent context.Context, dest string) error {

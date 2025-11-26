@@ -42,6 +42,61 @@ type NormalizedPackage struct {
 	*URLPackage
 }
 
+// literalString is a helper type that marshals as a YAML literal-style string
+type literalString string
+
+func (s literalString) MarshalYAML() (any, error) {
+	return &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Value: string(s),
+		Style: yaml.LiteralStyle,
+	}, nil
+}
+
+// urlPackageYAML is the output shape for URLPackage with desired key order
+type urlPackageYAML struct {
+	Name        string                      `yaml:"name"`
+	Sources     orderedSources              `yaml:"sources"`
+	BinPaths    []string                    `yaml:"binPaths,omitempty"`
+	InstallHook literalString               `yaml:"installHook,omitempty"`
+}
+
+// urlSourceYAML ensures url comes before sha256
+type urlSourceYAML struct {
+	URL    string `yaml:"url"`
+	SHA256 string `yaml:"sha256"`
+}
+
+// orderedSources wraps the sources map to emit platforms in sorted order
+type orderedSources map[string]urlSourceYAML
+
+func (o orderedSources) MarshalYAML() (any, error) {
+	node := &yaml.Node{Kind: yaml.MappingNode}
+
+	platforms := make([]string, 0, len(o))
+	for p := range o {
+		platforms = append(platforms, p)
+	}
+	slices.Sort(platforms)
+
+	for _, platform := range platforms {
+		source := o[platform]
+		platformNode := &yaml.Node{Kind: yaml.MappingNode}
+		platformNode.Content = append(platformNode.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "url"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: source.URL},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "sha256"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: source.SHA256},
+		)
+		node.Content = append(node.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: platform},
+			platformNode,
+		)
+	}
+
+	return node, nil
+}
+
 func (p *NormalizedPackage) UnmarshalYAML(value *yaml.Node) error {
 	var s string
 	if err := value.Decode(&s); err == nil {
@@ -83,26 +138,24 @@ func (p *NormalizedPackage) MarshalYAML() (any, error) {
 		if p.NixPackage.Commit == "" {
 			return p.NixPackage.Name, nil
 		}
-
 		return fmt.Sprintf("nixpkgs/%s#%s", p.NixPackage.Commit, p.NixPackage.Name), nil
 	}
 
-	// if only Name, emit as string
 	if p.URLPackage != nil {
-		m := map[string]any{
-			"name":    p.URLPackage.Name,
-			"sources": p.URLPackage.Sources,
+		sources := make(orderedSources, len(p.URLPackage.Sources))
+		for platform, source := range p.URLPackage.Sources {
+			sources[platform] = urlSourceYAML{URL: source.URL, SHA256: source.SHA256}
 		}
 
+		out := urlPackageYAML{
+			Name:     p.URLPackage.Name,
+			Sources:  sources,
+			BinPaths: p.URLPackage.BinPaths,
+		}
 		if p.URLPackage.InstallHook != "" {
-			m["installHook"] = p.URLPackage.InstallHook
+			out.InstallHook = literalString(p.URLPackage.InstallHook)
 		}
-
-		if p.URLPackage.BinPaths != nil {
-			m["binPaths"] = p.URLPackage.BinPaths
-		}
-
-		return m, nil
+		return out, nil
 	}
 
 	return p, nil
