@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
+func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 	fakeHomeMountedPath := "/home/nixy"
 
 	dockerCfg := ExecutorArgs{
@@ -17,26 +17,26 @@ func UseDocker(ctx *Context, profile *Profile) (*ExecutorArgs, error) {
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
 		WorkspaceFlakeDirMountedPath: WorkspaceFlakeSandboxMountPath,
-		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(profile.WorkspacesDir, ctx.PWD),
+		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(runtimePaths.WorkspacesDir, ctx.PWD),
 
 		EnvVars: executorEnvVars{
 			User:                  "nixy",
 			Home:                  fakeHomeMountedPath,
 			Term:                  os.Getenv("TERM"),
-			TermInfo:              os.Getenv("TERMINFO"),
+			TermInfo:              "/terminfo",
 			XDGSessionType:        os.Getenv("XDG_SESSION_TYPE"),
 			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
 			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			NixyWorkspaceDir:      ctx.PWD,
 			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
-			NixConfDir:            filepath.Join(profile.FakeHomeDir, ".config", "nix"),
+			NixConfDir:            filepath.Join(runtimePaths.FakeHomeDir, ".config", "nix"),
 		},
 	}
 
 	return &dockerCfg, nil
 }
 
-func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	addMount := func(src, dest string, flags ...string) string {
 		return fmt.Sprintf("%s:%s:%s", src, dest, strings.Join(flags, ","))
 	}
@@ -47,10 +47,10 @@ func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*ex
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 
 		// STEP: profile flake dir
-		"-v", addMount(nixy.profile.ProfilePath, nixy.executorArgs.ProfileDirMountedPath, "z"),
+		"-v", addMount(nixy.runtimePaths.BasePath, nixy.executorArgs.ProfileDirMountedPath, "z"),
 
 		// Mount Home
-		"-v", addMount(nixy.profile.FakeHomeDir, nixy.executorArgs.FakeHomeMountedPath, "z"),
+		"-v", addMount(nixy.runtimePaths.FakeHomeDir, nixy.executorArgs.FakeHomeMountedPath, "z"),
 		"-e", "HOME=" + nixy.executorArgs.FakeHomeMountedPath,
 
 		// Mount current flake directory
@@ -62,17 +62,22 @@ func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*ex
 		"--tmpfs", fmt.Sprintf("/bin:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
 		"--tmpfs", fmt.Sprintf("/usr:rw,uid=%d,gid=%d", os.Getuid(), os.Getgid()),
 		"-v", addMount(ctx.NixyBinPath, "/nixy/nixy", "ro", "z"),
-		"-v", addMount(nixy.profile.StaticNixBinPath, "/nixy/nix", "ro", "z"),
+		"-v", addMount(nixy.runtimePaths.StaticNixBinPath, "/nixy/nix", "ro", "z"),
 
 		// STEP: Nix Store
-		"-v", addMount(nixy.profile.NixDir, nixy.executorArgs.NixDirMountedPath, "z"),
+		"-v", addMount(nixy.runtimePaths.NixDir, nixy.executorArgs.NixDirMountedPath, "z"),
 
 		// STEP: project dir
 		"-v", addMount(nixy.PWD, nixy.PWD, "Z"),
 		"-v", addMount(nixy.PWD, WorkspaceDirSandboxMountPath, "Z"),
+	}
 
-		// STEP: mounts terminfo file, so that your cli tools know and behave according to it
-		"-v", addMount(nixy.executorArgs.EnvVars.TermInfo, nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
+	// Mount terminfo if TERMINFO env var is set
+	if terminfo := os.Getenv("TERMINFO"); terminfo != "" {
+		dockerCmd = append(dockerCmd,
+			"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
+			"-v", addMount(terminfo, nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
+		)
 	}
 
 	for _, mount := range nixy.Mounts {
@@ -87,8 +92,8 @@ func (nixy *Nixy) dockerShell(ctx *Context, command string, args ...string) (*ex
 		dockerCmd = append(dockerCmd, "-e", k+"="+v)
 	}
 
-	if !exists(nixy.profile.StaticNixBinPath) {
-		if err := downloadStaticNixBinary(ctx, nixy.profile.StaticNixBinPath); err != nil {
+	if !exists(nixy.runtimePaths.StaticNixBinPath) {
+		if err := downloadStaticNixBinary(ctx, nixy.runtimePaths.StaticNixBinPath); err != nil {
 			return nil, err
 		}
 	}

@@ -4,8 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -25,13 +25,16 @@ func getOSArch() string {
 	return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
-type URLPackage struct {
-	Name        string `yaml:"name"`
-	URL         string `yaml:"url"`
-	RenderedURL string `yaml:"-"`
+type URLAndSHA struct {
+	URL    string `yaml:"url"`
+	SHA256 string `yaml:"sha256"`
+}
 
-	// Sha256 is a map of $OS/$ARCH to sha256 corresponding to the binary
-	Sha256 map[string]string `yaml:"sha256,omitempty"`
+type URLPackage struct {
+	Name        string               `yaml:"name"`
+	Sources     map[string]URLAndSHA `yaml:"sources"`
+	InstallHook string               `yaml:"installHook,omitempty"`
+	BinPaths    []string             `yaml:"binPaths,omitempty"`
 }
 
 type NormalizedPackage struct {
@@ -56,11 +59,17 @@ func (p *NormalizedPackage) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	if urlpkg.Name == "" {
-		return fmt.Errorf("invalid URL package, must specify the name")
+		return fmt.Errorf("invalid URL package, must specify .name")
 	}
 
-	if urlpkg.URL == "" {
-		return fmt.Errorf("invalid URL package, must specify the URL")
+	if urlpkg.Sources == nil {
+		return fmt.Errorf("invalid URL package, must specify .sources")
+	}
+
+	for k, v := range urlpkg.Sources {
+		if v.URL == "" {
+			delete(urlpkg.Sources, k)
+		}
 	}
 
 	*p = NormalizedPackage{
@@ -80,11 +89,20 @@ func (p *NormalizedPackage) MarshalYAML() (any, error) {
 
 	// if only Name, emit as string
 	if p.URLPackage != nil {
-		return map[string]any{
-			"name":   p.URLPackage.Name,
-			"url":    p.URLPackage.URL,
-			"sha256": p.URLPackage.Sha256,
-		}, nil
+		m := map[string]any{
+			"name":    p.URLPackage.Name,
+			"sources": p.URLPackage.Sources,
+		}
+
+		if p.URLPackage.InstallHook != "" {
+			m["installHook"] = p.URLPackage.InstallHook
+		}
+
+		if p.URLPackage.BinPaths != nil {
+			m["binPaths"] = p.URLPackage.BinPaths
+		}
+
+		return m, nil
 	}
 
 	return p, nil
@@ -150,10 +168,17 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		}
 
 		if pkg.URLPackage != nil {
+			source, ok := pkg.URLPackage.Sources[result.OSArch]
+			if !ok || source.URL == "" {
+				return nil, fmt.Errorf("URL package %q has no source defined for %s", pkg.URLPackage.Name, result.OSArch)
+			}
+
 			result.URLPackages = append(result.URLPackages, templates.URLPackage{
-				Name:   pkg.URLPackage.Name,
-				URL:    pkg.URLPackage.RenderedURL,
-				Sha256: pkg.URLPackage.Sha256,
+				Name:        pkg.URLPackage.Name,
+				URL:         source.URL,
+				Sha256:      source.SHA256,
+				InstallHook: pkg.URLPackage.InstallHook,
+				BinPaths:    pkg.URLPackage.BinPaths,
 			})
 		}
 	}
@@ -213,10 +238,17 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 	return &result, nil
 }
 
-// fetchURLHash fetches the SHA256 hash of a file at the given URL
-func fetchURLHash(url string) (string, error) {
+// fetchURLPackageHash fetches the SHA256 hash of a file at the given URL
+func fetchURLPackageHash(url string) (string, error) {
+	if url == "" {
+		return "", fmt.Errorf("empty URL provided")
+	}
+
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return nil
+		},
 	}
 
 	resp, err := client.Get(url)
@@ -230,7 +262,8 @@ func fetchURLHash(url string) (string, error) {
 	}
 
 	hasher := sha256.New()
-	if _, err := io.Copy(hasher, resp.Body); err != nil {
+
+	if err := downloader(fmt.Sprintf("Downloading URL Package (%s)", filepath.Base(url)), resp.Body, hasher); err != nil {
 		return "", fmt.Errorf("failed to hash content: %w", err)
 	}
 

@@ -74,10 +74,11 @@ func init() {
 
 // copy of pkg/nix.URLPackage
 type URLPackage struct {
-	Name        string            `yaml:"name"`
-	URL         string            `yaml:"url"`
-	RenderedURL string            `yaml:"-"`
-	Sha256      map[string]string `yaml:"sha256,omitempty"`
+	Name        string `yaml:"name"`
+	URL         string `yaml:"url"`
+	Sha256      string `yaml:"sha256"`
+	InstallHook string
+	BinPaths    []string `yaml:"-"`
 }
 
 type WorkspaceFlakeParams struct {

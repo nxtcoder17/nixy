@@ -42,6 +42,8 @@
         {{- end }}
 
         packages = [
+          pkgs_default.bash
+          pkgs_default.bash-completion
           {{- range $k := $nixpkgsList -}}
           {{- range $item := index $packagesMap $k }}
           pkgs_{{$k}}.{{$item}}
@@ -65,12 +67,7 @@
             pname = "{{$pkg.Name}}";
             src = pkgs.fetchurl {
               url = "{{$pkg.URL}}";
-              sha256 = let
-                  shaMap = builtins.fromJSON ''{{$pkg.Sha256 | toJson }}'';
-                in
-                  if builtins.hasAttr "{{$osArch}}" shaMap
-                  then builtins.getAttr "{{$osArch}}" shaMap
-                  else throw "No sha256 found for OS/Arch '{{$osArch}}'. Please add the correct hash to the Sha256 map.";
+              sha256 = "{{$pkg.Sha256}}";
             };
             nativeBuildInputs = with pkgs; [
               unzip p7zip unrar xz gzip bzip2 zstd lzip
@@ -119,6 +116,7 @@
                   # INFO: renaming the script as per the tool name, as it is a one off binary
                   cp "$src" ./$name
                   chmod +x $name
+                  echo 'cp $name $out/bin' > .copy-binary
                   ;;
                 *)
                   echo "!! Unknown archive type: $mime"
@@ -129,24 +127,24 @@
             '';
             installPhase = ''
               mkdir -p $out/bin
-              shopt -s extglob
-              tmp_file=$(mktemp --tmpdir=/tmp)
-              echo "tmp file: $tmp_file"
-              ls | grep -v 'env-vars' > $tmp_file
 
-              total_count=$(cat $tmp_file | wc -l)
-              echo "total count: $total_count"
+              {{- if $pkg.InstallHook }}
+              {{$pkg.InstallHook}}
+              return
+              {{- end }}
 
-              if [ $total_count -eq 1 ] ; then
-                filepath=$(sed "1q;d" $tmp_file)
-                if [ -d "$filepath" ]; then
-                  cp -r $filepath/* $out
-                else
-                  cp -r $filepath $out/bin
-                fi
-              else
-                cp -r . $out
+              if [ -f ".copy-binary" ]; then
+                source .copy-binary
+                return
               fi
+
+              {{- if $pkg.BinPaths }}
+                {{- range $item := $pkg.BinPaths }}
+                cp {{$item}} $out/bin
+                {{- end }}
+              {{- else }}
+                cp -r * $out
+              {{- end }}
 
               echo "[##] printing contents of $out now"
               ls -al $out
@@ -170,15 +168,18 @@
               else ''''
             }
 
+            source ${pkgs_default.bash-completion}/etc/profile.d/bash_completion.sh
+
             if [ -z "$LANG" ]; then
               # INFO: if LANG env var unset, set it to en_US.UTF-8
               export LANG="en_US.UTF-8"
             fi
 
-            if [ ! -e "/usr/bin" ]; then
-              # INFO: this ensures, we always have /usr/bin/env
-              ln -sf ${pkgs.coreutils}/* /usr
-            fi
+            # INFO: this ensures, we always have /usr/bin/env
+            [ ! -e /usr/bin ] && [ -e "${pkgs.coreutils}/bin" ] && ln -sf ${pkgs.coreutils}/bin /usr/bin
+            [ ! -e /usr/share ] && [ -e "${pkgs.coreutils}/share" ] && ln -sf ${pkgs.coreutils}/share /usr/share
+            [ ! -e /usr/libexec ] && [ -e "${pkgs.coreutils}/libexec" ] && ln -sf ${pkgs.coreutils}/libexec /usr/libexec
+            [ ! -e /usr/lib ] && [ -e "${pkgs.coreutils}/lib" ] && ln -sf ${pkgs.coreutils}/lib /usr/lib
 
             # INFO: it seems like many tools have hardcoded value for /bin/sh, so we need to make sure that /bin/sh exists
             if [ ! -e "/bin/sh" ]; then

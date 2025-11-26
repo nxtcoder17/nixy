@@ -24,18 +24,18 @@ function __nixy_shell_activate --on-variable PWD --on-event fish_prompt
       --padding "1 2" \
       --bold \
       --foreground 147 \
-      "🔧 nixy.yml detected" "" "Press $(gum style --foreground 212 --bold 'ENTER') to launch nixy shell" "$(gum style --foreground 241 'any other key to skip • auto-yes in 2s')"
+      "🔧 nixy.yml detected" "" "Press $(gum style --foreground 212 --bold 'ENTER') to launch nixy shell" "$(gum style --foreground 241 'any other key to skip • auto-yes in 1s')"
   else
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  nixy.yml detected in this directory"
     echo "  Press ENTER to launch nixy shell"
-    echo "  (any other key to skip • auto-yes in 2s)"
+    echo "  (any other key to skip • auto-yes in 1s)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   end
 
   # Read user input with 2 second timeout
-  set -l response (bash -c "read -t 2 -n 1 -s key; echo \$?; echo \$key")
+  set -l response (bash -c "read -t 1 -n 1 -s key; echo \$?; echo \$key")
   set -l exit_code $response[1]
   set -l key (string join '' $response[2..-1])
 
@@ -49,4 +49,3 @@ function __nixy_shell_activate --on-variable PWD --on-event fish_prompt
   end
   set -g last_dir "$PWD"
 end
-
