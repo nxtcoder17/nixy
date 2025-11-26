@@ -74,10 +74,6 @@ func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...s
 
 		"--ro-bind", "/etc", "/etc",
 
-		// mounts terminfo file, so that your cli tools know and behave according to it
-		"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
-		"--ro-bind", os.Getenv("TERMINFO"), nixy.executorArgs.EnvVars.TermInfo,
-
 		// nixy and nix binary mounts
 		"--tmpfs", "/nixy",
 		"--setenv", "PATH", "/nixy",
@@ -104,6 +100,14 @@ func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...s
 		"--bind", ctx.PWD, WorkspaceDirSandboxMountPath,
 	}
 
+	// Mount terminfo if TERMINFO env var is set
+	if terminfo := os.Getenv("TERMINFO"); terminfo != "" {
+		bwrapArgs = append(bwrapArgs,
+			"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
+			"--ro-bind", terminfo, nixy.executorArgs.EnvVars.TermInfo,
+		)
+	}
+
 	mounts := nixy.Mounts
 	if ctx.NixyUseProfile {
 		mounts = append(mounts, nixy.profileNixy.Mounts...)
@@ -117,31 +121,36 @@ func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...s
 			flag = "--ro-bind"
 		}
 
-		bwrapArgs = append(bwrapArgs,
-			flag,
-			os.ExpandEnv(mount.Source),
-			os.Expand(mount.Destination, func(s string) string {
-				if v, ok := executorEnv[s]; ok {
+		src := os.ExpandEnv(mount.Source)
+		dst := os.Expand(mount.Destination, func(s string) string {
+			if v, ok := executorEnv[s]; ok {
+				return v
+			}
+
+			if v, ok := nixy.Env[s]; ok {
+				return v
+			}
+
+			if nixy.profileNixy != nil {
+				if v, ok := nixy.profileNixy.Env[s]; ok {
 					return v
 				}
+			}
 
-				if v, ok := nixy.Env[s]; ok {
-					return v
-				}
+			// Return original $VAR syntax if not found, so errors are visible
+			return "$" + s
+		})
 
-				if nixy.profileNixy != nil {
-					if v, ok := nixy.profileNixy.Env[s]; ok {
-						return v
-					}
-				}
+		if src == "" || dst == "" {
+			return nil, fmt.Errorf("mount has empty source or destination: source=%q, dest=%q (original: %q -> %q)", src, dst, mount.Source, mount.Destination)
+		}
 
-				return ""
-			}))
+		bwrapArgs = append(bwrapArgs, flag, src, dst)
 	}
 
-	// for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
-	// 	bwrapArgs = append(bwrapArgs, "--setenv", k, v)
-	// }
+	for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
+		bwrapArgs = append(bwrapArgs, "--setenv", k, v)
+	}
 
 	bwrapArgs = append(bwrapArgs, command)
 	bwrapArgs = append(bwrapArgs, args...)

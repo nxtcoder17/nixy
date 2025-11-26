@@ -255,6 +255,7 @@ func downloadStaticNixBinary(ctx context.Context, binPath string) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
 	output, err := os.OpenFile(binPath,
 		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, // flags
@@ -263,13 +264,11 @@ func downloadStaticNixBinary(ctx context.Context, binPath string) error {
 	if err != nil {
 		return err
 	}
+	defer output.Close()
 
 	if err := downloader("Downloading Static Nix Executable", resp.Body, output); err != nil {
 		return err
 	}
-
-	defer output.Close()
-	defer resp.Body.Close()
 
 	return nil
 }

@@ -163,7 +163,9 @@ func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 
 	hasher := sha256.New()
 	hasher.Write([]byte(os.Getenv("NIXY_VERSION")))
-	hasher.Write([]byte(os.Getenv("NIXY_MODE")))
+	// Use NIXY_EXECUTOR to match Context.NixyMode, ensuring different executor modes
+	// always result in distinct workspace hashes
+	hasher.Write([]byte(os.Getenv("NIXY_EXECUTOR")))
 	hasher.Write(b)
 	nixyCfg.sha256Sum = fmt.Sprintf("%x", hasher.Sum(nil))[:7]
 
@@ -176,8 +178,13 @@ func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 
 		// Fetch SHA256 if not provided
 		if pkg.URLPackage != nil {
-			v, hasSha256 := pkg.URLPackage.Sources[getOSArch()]
-			if hasSha256 && v.SHA256 != "" {
+			osArch := getOSArch()
+			v, hasSource := pkg.URLPackage.Sources[osArch]
+			if !hasSource || v.URL == "" {
+				return nil, fmt.Errorf("URL package %q has no source defined for %s", pkg.URLPackage.Name, osArch)
+			}
+
+			if v.SHA256 != "" {
 				continue
 			}
 
@@ -188,7 +195,7 @@ func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 
 			hasPkgUpdates = true
 
-			pkg.URLPackage.Sources[getOSArch()] = URLAndSHA{
+			pkg.URLPackage.Sources[osArch] = URLAndSHA{
 				URL:    v.URL,
 				SHA256: hash,
 			}
@@ -313,6 +320,9 @@ func compareAndSaveHash(saveToFile string, sha256Sum string) (bool, error) {
 	return hasHashChanged, nil
 }
 
+// SyncToDisk writes the nixy config to disk.
+// NOTE: This method is not thread-safe and should only be called from a single goroutine
+// (typically during initialization in parseAndSyncNixyFile or InitNixyFile).
 func (nixy *Nixy) SyncToDisk(file string) error {
 	if file == "" {
 		return fmt.Errorf("required param `file` not provided")
@@ -347,8 +357,8 @@ func (nixy *Nixy) SyncToDisk(file string) error {
 	nixy.Packages = upkg
 
 	output, err := os.OpenFile(file,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, // flags
-		0o755,                              // permissions
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+		0o644,
 	)
 	if err != nil {
 		return err

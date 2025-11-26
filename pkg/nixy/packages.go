@@ -168,15 +168,15 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		}
 
 		if pkg.URLPackage != nil {
-
-			if pkg.URLPackage.Sources == nil {
-				pkg.URLPackage.Sources = make(map[string]URLAndSHA)
+			source, ok := pkg.URLPackage.Sources[result.OSArch]
+			if !ok || source.URL == "" {
+				return nil, fmt.Errorf("URL package %q has no source defined for %s", pkg.URLPackage.Name, result.OSArch)
 			}
 
 			result.URLPackages = append(result.URLPackages, templates.URLPackage{
 				Name:        pkg.URLPackage.Name,
-				URL:         pkg.URLPackage.Sources[result.OSArch].URL,
-				Sha256:      pkg.URLPackage.Sources[result.OSArch].SHA256,
+				URL:         source.URL,
+				Sha256:      source.SHA256,
 				InstallHook: pkg.URLPackage.InstallHook,
 				BinPaths:    pkg.URLPackage.BinPaths,
 			})

@@ -22,7 +22,7 @@ __ps1_add_prefix() {
   dim_cyan="\[\033[2;36m\]"
   color_reset="\[\033[0m\]"
 
-  NIXY_PROMPT_PREFIX="${NIXY_PROMPT_PREFIX:-${DIM_CYAN}[${cyan} ᵧ${dim_cyan}]${color_reset}}"
+  NIXY_PROMPT_PREFIX="${NIXY_PROMPT_PREFIX:-${dim_cyan}[${cyan} ᵧ${dim_cyan}]${color_reset}}"
   PS1="${NIXY_PROMPT_PREFIX}$PS1"
 }
 

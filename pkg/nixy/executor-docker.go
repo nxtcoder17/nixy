@@ -70,10 +70,14 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		// STEP: project dir
 		"-v", addMount(nixy.PWD, nixy.PWD, "Z"),
 		"-v", addMount(nixy.PWD, WorkspaceDirSandboxMountPath, "Z"),
+	}
 
-		// STEP: mounts terminfo file, so that your cli tools know and behave according to it
-		"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
-		"-v", addMount(os.Getenv("TERMINFO"), nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
+	// Mount terminfo if TERMINFO env var is set
+	if terminfo := os.Getenv("TERMINFO"); terminfo != "" {
+		dockerCmd = append(dockerCmd,
+			"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
+			"-v", addMount(terminfo, nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
+		)
 	}
 
 	for _, mount := range nixy.Mounts {
