@@ -1,8 +1,11 @@
 package nixy
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func Test_parsePackage(t *testing.T) {
@@ -124,6 +127,168 @@ func Test_parsePackage(t *testing.T) {
 
 			if !reflect.DeepEqual(np, tt.want) {
 				t.Errorf("Assertion Failed \n\tgot: %v\n\texpected: %v", np, tt.want)
+			}
+		})
+	}
+}
+
+func TestURLPackage_MarshalYAML_KeyOrdering(t *testing.T) {
+	tests := []struct {
+		name string
+		pkg  *NormalizedPackage
+		want string
+	}{
+		{
+			name: "single platform",
+			pkg: &NormalizedPackage{
+				URLPackage: &URLPackage{
+					Name: "run",
+					Sources: map[string]URLAndSHA{
+						"linux/amd64": {URL: "https://example.com/run-linux-amd64", SHA256: "abc123"},
+					},
+					BinPaths:    []string{"bin/run"},
+					InstallHook: "echo hello",
+				},
+			},
+			want: `name: run
+sources:
+  linux/amd64:
+    url: https://example.com/run-linux-amd64
+    sha256: abc123
+binPaths:
+  - bin/run
+installHook: |-
+  echo hello
+`,
+		},
+		{
+			name: "multiple platforms sorted alphabetically",
+			pkg: &NormalizedPackage{
+				URLPackage: &URLPackage{
+					Name: "run",
+					Sources: map[string]URLAndSHA{
+						"linux/amd64":  {URL: "https://example.com/run-linux-amd64", SHA256: "linux123"},
+						"darwin/arm64": {URL: "https://example.com/run-darwin-arm64", SHA256: "darwin123"},
+						"darwin/amd64": {URL: "https://example.com/run-darwin-amd64", SHA256: "darwinx86"},
+					},
+				},
+			},
+			want: `name: run
+sources:
+  darwin/amd64:
+    url: https://example.com/run-darwin-amd64
+    sha256: darwinx86
+  darwin/arm64:
+    url: https://example.com/run-darwin-arm64
+    sha256: darwin123
+  linux/amd64:
+    url: https://example.com/run-linux-amd64
+    sha256: linux123
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			encoder := yaml.NewEncoder(&buf)
+			encoder.SetIndent(2)
+			if err := encoder.Encode(tt.pkg); err != nil {
+				t.Fatalf("failed to encode: %v", err)
+			}
+			got := buf.String()
+			if got != tt.want {
+				t.Errorf("mismatch:\ngot:\n%s\nwant:\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateSHA256InNode_PreservesComments(t *testing.T) {
+	input := `# This is a top comment
+nixpkgs:
+  # default nixpkgs version
+  default: "abc123"
+packages:
+  - go # Go compiler
+  # URL package for run tool
+  - name: run
+    sources:
+      linux/amd64:
+        url: "https://example.com/run"
+        sha256: ""
+# Shell hooks
+onShellEnter: |
+  export PATH="$PWD/bin:$PATH"
+`
+
+	var rootNode yaml.Node
+	if err := yaml.Unmarshal([]byte(input), &rootNode); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if err := updateSHA256InNode(&rootNode, 1, "linux/amd64", "newhash123"); err != nil {
+		t.Fatalf("failed to update sha256: %v", err)
+	}
+
+	var buf bytes.Buffer
+	encoder := yaml.NewEncoder(&buf)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&rootNode); err != nil {
+		t.Fatalf("failed to encode: %v", err)
+	}
+
+	got := buf.String()
+	want := `# This is a top comment
+nixpkgs:
+  # default nixpkgs version
+  default: "abc123"
+packages:
+  - go # Go compiler
+  # URL package for run tool
+  - name: run
+    sources:
+      linux/amd64:
+        url: "https://example.com/run"
+        sha256: "newhash123"
+# Shell hooks
+onShellEnter: |
+  export PATH="$PWD/bin:$PATH"
+`
+
+	if got != want {
+		t.Errorf("mismatch:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestNixPackage_MarshalYAML(t *testing.T) {
+	tests := []struct {
+		name string
+		pkg  *NormalizedPackage
+		want string
+	}{
+		{
+			name: "simple package",
+			pkg:  &NormalizedPackage{NixPackage: &NixPackage{Name: "go"}},
+			want: "go\n",
+		},
+		{
+			name: "package with commit",
+			pkg:  &NormalizedPackage{NixPackage: &NixPackage{Name: "go", Commit: "unstable"}},
+			want: "nixpkgs/unstable#go\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			encoder := yaml.NewEncoder(&buf)
+			if err := encoder.Encode(tt.pkg); err != nil {
+				t.Fatalf("failed to encode: %v", err)
+			}
+			got := buf.String()
+			if got != tt.want {
+				t.Errorf("mismatch:\ngot:\n%s\nwant:\n%s", got, tt.want)
 			}
 		})
 	}
