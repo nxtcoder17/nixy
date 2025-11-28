@@ -202,6 +202,30 @@ func main() {
 					return nil
 				},
 			},
+			{
+				Name:    "shell:hook",
+				Suggest: true,
+				Arguments: []cli.Argument{
+					&cli.StringArg{
+						Name:   "shell",
+						Config: cli.StringConfig{TrimSpace: true},
+					},
+				},
+				Action: func(ctx context.Context, c *cli.Command) error {
+					shell := c.StringArg("shell")
+					switch shell {
+					case "fish":
+						fmt.Print(shellHookFish)
+					case "bash":
+						fmt.Print(shellHookBash)
+					case "zsh":
+						fmt.Print(shellHookZsh)
+					default:
+						return fmt.Errorf("unsupported shell: %s (supported: fish, bash, zsh)", shell)
+					}
+					return nil
+				},
+			},
 		}
 	}
 
