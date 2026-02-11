@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"log/slog"
+	"context"
 
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 	"github.com/nxtcoder17/nixy/pkg/set"
