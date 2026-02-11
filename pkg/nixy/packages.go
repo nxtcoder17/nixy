@@ -1,15 +1,15 @@
 package nixy
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 	"github.com/nxtcoder17/nixy/pkg/set"
@@ -55,10 +55,10 @@ func (s literalString) MarshalYAML() (any, error) {
 
 // urlPackageYAML is the output shape for URLPackage with desired key order
 type urlPackageYAML struct {
-	Name        string                      `yaml:"name"`
-	Sources     orderedSources              `yaml:"sources"`
-	BinPaths    []string                    `yaml:"binPaths,omitempty"`
-	InstallHook literalString               `yaml:"installHook,omitempty"`
+	Name        string         `yaml:"name"`
+	Sources     orderedSources `yaml:"sources"`
+	BinPaths    []string       `yaml:"binPaths,omitempty"`
+	InstallHook literalString  `yaml:"installHook,omitempty"`
 }
 
 // urlSourceYAML ensures url comes before sha256
@@ -205,7 +205,8 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		librariesMap[k] = &set.Set[string]{}
 	}
 
-	for _, pkg := range params.Packages {
+	for i := range params.Packages {
+		pkg := params.Packages[i]
 		if pkg == nil {
 			continue
 		}
@@ -291,34 +292,58 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 	return &result, nil
 }
 
+// nixPrefetchResult represents the JSON output from `nix store prefetch-file`
+type nixPrefetchResult struct {
+	Hash      string `json:"hash"`
+	StorePath string `json:"storePath"`
+}
+
+// findNixBinary locates the nix binary, first checking PATH then falling back
+// to the static nix binary in the nixy data directory.
+func findNixBinary() (string, error) {
+	// Try to find nix in PATH first
+	if nixPath, err := exec.LookPath("nix"); err == nil {
+		return nixPath, nil
+	}
+
+	// Fall back to static nix binary path
+	staticNixPath := filepath.Join(XDGDataDir(), "profiles", "default", "nix", "bin", "nix")
+	if exists(staticNixPath) {
+		return staticNixPath, nil
+	}
+
+	return "", fmt.Errorf("nix binary not found in PATH or at %s", staticNixPath)
+}
+
 // fetchURLPackageHash fetches the SHA256 hash of a file at the given URL
-func fetchURLPackageHash(url string) (string, error) {
+// using `nix store prefetch-file` to download the file into the Nix store,
+// avoiding duplicate downloads when the flake is later built.
+func fetchURLPackageHash(ctx context.Context, url string) (string, error) {
 	if url == "" {
 		return "", fmt.Errorf("empty URL provided")
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return nil
-		},
-	}
-
-	resp, err := client.Get(url)
+	nixBin, err := findNixBinary()
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch URL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to fetch URL: status %d", resp.StatusCode)
+		return "", err
 	}
 
-	hasher := sha256.New()
+	slog.Info("Prefetching", "package", url)
 
-	if err := downloader(fmt.Sprintf("Downloading URL Package (%s)", filepath.Base(url)), resp.Body, hasher); err != nil {
-		return "", fmt.Errorf("failed to hash content: %w", err)
+	cmd := exec.CommandContext(ctx, nixBin, "--extra-experimental-features", "nix-command", "store", "prefetch-file", "--json", "--hash-type", "sha256", url)
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = os.Stderr // Show nix's progress output to the user
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to run nix store prefetch-file: %w", err)
 	}
 
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+	var result nixPrefetchResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return "", fmt.Errorf("failed to parse nix store prefetch-file output: %w", err)
+	}
+
+	return result.Hash, nil
 }

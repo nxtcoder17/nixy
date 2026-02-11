@@ -138,12 +138,12 @@
                 return
               fi
 
-              {{- if $pkg.BinPaths }}
-                {{- range $item := $pkg.BinPaths }}
-                cp {{$item}} $out/bin
-                {{- end }}
-              {{- else }}
-                cp -r * $out
+              # {{$pkg.BinPaths | toJson}}
+
+              {{- /*INFO: copying with -L avoids broken internal references. */}}
+              cp -rL * $out
+              {{- range $item := $pkg.BinPaths }}
+              ln -sf $out/{{$item}}/* $out/bin
               {{- end }}
 
               echo "[##] printing contents of $out now"
@@ -257,6 +257,21 @@
           };
 
         {{- end }}
+
+        packages.patch-dynamic-loader = pkgs.writeShellScriptBin "patch-dynamic-loader" ''
+          set -euo pipefail
+
+          if [ $# -ne 1 ]; then
+            echo "Usage: patch-dynamic-loader <binary>"
+            exit 1
+          fi
+
+          BIN="$1"
+
+          patchelf \
+            --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" \
+            "$BIN"
+        '';
       }
     );
 }
