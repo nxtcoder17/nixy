@@ -1,54 +1,34 @@
 NIXY_LAST_DIR=""
 
-__nixy_shell_activate() {
-  [[ "$NIXY_LAST_DIR" == "$PWD" ]] && return
-
-  [[ -n "$NIXY_SHELL" ]] && return
-
-  [[ ! -f nixy.yml ]] && return
-
-  # Save cursor position before displaying prompt
-  tput sc
-
-  # Display prompt
-  if command -v gum &>/dev/null; then
-    gum style \
-      --border rounded \
-      --border-foreground 212 \
-      --align center \
-      --width 60 \
-      --margin "1" \
-      --padding "1 2" \
-      --bold \
-      --foreground 147 \
-      "🔧 nixy.yml detected" "" "Press $(gum style --foreground 212 --bold 'ENTER') to launch nixy shell" "$(gum style --foreground 241 'any other key to skip • auto-yes in 2s')"
-  else
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  nixy.yml detected in this directory"
-    echo "  Press ENTER to launch nixy shell"
-    echo "  (any other key to skip • auto-yes in 2s)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  fi
-
-  # Read user input with 2 second timeout
-  local key
-  local exit_code
-  read -t 2 -k 1 -s key
-  exit_code=$?
-
-  # Restore cursor position and clear to end of screen
-  tput rc
-  tput ed
-
-  # Launch nixy shell on ENTER or timeout
-  if [[ $exit_code -eq 0 && -z "$key" ]] || [[ $exit_code -gt 128 ]]; then
-    nixy shell
-  fi
-
-  NIXY_LAST_DIR="$PWD"
+__nixy_debug() {
+  echo "[## NIXY DEBUG] $@"
 }
 
-# Hook into prompt using precmd
-autoload -Uz add-zsh-hook
-add-zsh-hook precmd __nixy_shell_activate
+__nixy_shell_hook() {
+  # If not in a nixy shell, and no nixy.yml, do nothing
+  if [[ -z "$NIXY_SHELL" ]] && [[ ! -f nixy.yml ]]; then
+    return
+  fi
+
+  # Set prompt prefix once, if inside NIXY shell
+  if [[ -n "$NIXY_SHELL" ]] && [[ -z "$NIXY_PROMPT_PREFIX" ]]; then
+    # Zsh uses %F and %f for color, no \[ \]
+    local cyan dim_cyan reset
+    cyan="%F{cyan}"
+    dim_cyan="%F{cyan}%B"  # or a dim color; zsh doesn't have a native "dim" so adjust as desired
+    reset="%f%b"
+
+    NIXY_PROMPT_PREFIX="${NIXY_PROMPT_PREFIX:-${dim_cyan}[${cyan} ᵧ${dim_cyan}]${reset}}"
+  fi
+
+  # Auto-enter nixy shell when directory changes and not already in shell
+  if [[ -z "$NIXY_SHELL" ]] && [[ "$NIXY_LAST_DIR" != "$PWD" ]]; then
+    NIXY_LAST_DIR="$PWD"
+    nixy shell
+  fi
+}
+
+# Register hook if not already registered
+if [[ -z "${precmd_functions[(r)__nixy_shell_hook]}" ]]; then
+  precmd_functions+=(__nixy_shell_hook)
+fi

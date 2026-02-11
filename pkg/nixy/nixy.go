@@ -149,7 +149,7 @@ func LoadInNixyShell(parent context.Context) (*InShellNixy, error) {
 	return &nixy, nil
 }
 
-func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
+func parseAndSyncNixyFile(ctx context.Context, file string) (*Nixy, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read nixy file (%s): %w", file, err)
@@ -201,7 +201,7 @@ func parseAndSyncNixyFile(_ context.Context, file string) (*Nixy, error) {
 				continue
 			}
 
-			hash, err := fetchURLPackageHash(v.URL)
+			hash, err := fetchURLPackageHash(ctx, v.URL)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch SHA256 hash for (name: %s, url: %s): %w", pkg.URLPackage.Name, v.URL, err)
 			}

@@ -6,7 +6,7 @@ __nixy_debug() {
 
 __nixy_shell_hook() {
   if [[ -z "$NIXY_SHELL" ]] && [[ ! -f nixy.yml ]]; then
-    __ps1_cleanup
+    # __ps1_cleanup
     return
   fi
 
@@ -25,6 +25,7 @@ __nixy_shell_hook() {
   fi
 }
 
+# Register hook only if not already registered
 case "$PROMPT_COMMAND" in
   *__nixy_shell_hook*) ;;
   *)
