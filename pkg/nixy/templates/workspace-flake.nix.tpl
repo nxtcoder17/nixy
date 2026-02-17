@@ -152,6 +152,21 @@
           })
 
           {{- end }}
+
+          (pkgs.writeShellScriptBin "patch-dynamic-loader" ''
+            set -euo pipefail
+
+            if [ $# -ne 1 ]; then
+              echo "Usage: patch-dynamic-loader <binary>"
+              exit 1
+            fi
+
+            BIN="$1"
+
+            patchelf \
+              --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" \
+              "$BIN"
+          '')
         ];
       in
       {
@@ -258,20 +273,6 @@
 
         {{- end }}
 
-        packages.patch-dynamic-loader = pkgs.writeShellScriptBin "patch-dynamic-loader" ''
-          set -euo pipefail
-
-          if [ $# -ne 1 ]; then
-            echo "Usage: patch-dynamic-loader <binary>"
-            exit 1
-          fi
-
-          BIN="$1"
-
-          patchelf \
-            --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" \
-            "$BIN"
-        '';
       }
     );
 }

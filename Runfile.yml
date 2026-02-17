@@ -11,9 +11,12 @@ tasks:
 
   build:
     env:
+      CGO_ENABLED: 0
+
       binpath:
         default: 
           sh: "echo ./bin/nixy"
+
       GOOS:
         default:
           sh: go env GOOS
