@@ -14,15 +14,14 @@ tasks:
       CGO_ENABLED: 0
 
       binpath:
-        default: 
-          sh: "echo ./bin/nixy"
+        sh: "echo ./bin/nixy"
 
       GOOS:
-        default:
-          sh: go env GOOS
+        sh: go env GOOS
+
       GOARCH:
-        default:
-          sh: go env GOARCH
+        sh: go env GOARCH
+
       version:
         required: true
     cmd:

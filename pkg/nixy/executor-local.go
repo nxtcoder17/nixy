@@ -46,13 +46,19 @@ func UseLocal(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 			// 	filepath.Dir(nixPath),
 			// },
 			NixyWorkspaceDir:      ctx.PWD,
+			NixyWorkspaceLabel:    filepath.Base(ctx.PWD),
 			NixyWorkspaceFlakeDir: wsHostPath,
 			NixConfDir:            "",
 		},
 	}, nil
 }
 
-func (nix *NixyWrapper) localShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+func (nixy *NixyWrapper) localShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+	isWorktreeEnabled, workspaceDir, _ := GitWorktreeEnabledWorkspace(ctx, ctx.PWD)
+	if isWorktreeEnabled {
+		nixy.executorArgs.EnvVars.NixyWorkspaceLabel = filepath.Base(workspaceDir) + ctx.PWD[len(workspaceDir):]
+	}
+
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Env = append(cmd.Env, fmt.Sprintf("PATH=%s:%s", filepath.Dir(ctx.NixyBinPath), os.Getenv("PATH")))
 	return cmd, nil

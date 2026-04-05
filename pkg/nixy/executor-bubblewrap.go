@@ -30,6 +30,7 @@ func UseBubbleWrap(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, err
 			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			NixyShell:             "true",
 			NixyWorkspaceDir:      ctx.PWD,
+			NixyWorkspaceLabel:    filepath.Base(ctx.PWD),
 			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
 			NixConfDir:            filepath.Join(runtimePaths.FakeHomeDir, ".config", "nix"),
 		},
@@ -50,6 +51,11 @@ func exists(path string) bool {
 }
 
 func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+	isWorktreeEnabled, workspaceDir, _ := GitWorktreeEnabledWorkspace(ctx, ctx.PWD)
+	if isWorktreeEnabled {
+		nixy.executorArgs.EnvVars.NixyWorkspaceLabel = filepath.Base(workspaceDir) + ctx.PWD[len(workspaceDir):]
+	}
+
 	bwrapArgs := []string{
 		// no-zombie processes
 		// "--clearenv",
@@ -94,10 +100,10 @@ func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...s
 		"--bind", nixy.runtimePaths.NixDir, nixy.executorArgs.NixDirMountedPath,
 
 		// Current Working Directory as it is
-		"--bind", ctx.PWD, ctx.PWD,
+		"--bind", workspaceDir, workspaceDir,
 
 		// INFO: it is just to keep the workspace at /workspace in the sandbox
-		"--bind", ctx.PWD, WorkspaceDirSandboxMountPath,
+		"--bind", workspaceDir, WorkspaceDirSandboxMountPath,
 	}
 
 	// Mount terminfo if TERMINFO env var is set

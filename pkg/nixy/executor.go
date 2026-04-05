@@ -6,6 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"log/slog"
+	"context"
+	"bytes"
 )
 
 func XDGDataDir() string {
@@ -15,6 +18,38 @@ func XDGDataDir() string {
 	}
 
 	return filepath.Join(xdgDataHome, "nixy")
+}
+
+// GitWorktreeEnabledWorkspace returns workspace path that needs to be 
+// used/mounted in an executor for a functional git bare repository experience
+func GitWorktreeEnabledWorkspace(ctx context.Context, dir string) (bool, string, error) {
+	workspaceDir := dir
+
+	gitDir, err := exec.CommandContext(ctx, "git", "rev-parse", "--git-common-dir").CombinedOutput()
+	gitDir = bytes.TrimSpace(gitDir)
+	if err != nil {
+		slog.Debug("[CHECK/git-bare-repository] git-common-dir (FAILED)", "stderr", string(gitDir), "err", err)
+    return false, workspaceDir, err
+  }
+
+	slog.Debug("[CHECK/git-bare-repository] git-common-dir", "dir", string(gitDir))
+
+	gitBareRepoResult, err := exec.CommandContext(ctx, "git", "--git-dir", string(gitDir), "rev-parse", "--is-bare-repository").CombinedOutput()
+	gitBareRepoResult = bytes.TrimSpace(gitBareRepoResult)
+	if err != nil {
+		slog.Error("[CHECK/git-bare-repository] is-bare-repository (FAILED)", "stderr", string(gitBareRepoResult), "err", err) 
+    return false, workspaceDir, err
+  }
+
+	isWorktree := false
+	if string(gitBareRepoResult) == "true" {
+		isWorktree = true
+		workspaceDir = string(gitDir)
+	}
+
+	slog.Debug("[CHECK/git-bare-repository]", "workspace-path", workspaceDir)
+
+	return isWorktree, workspaceDir, nil
 }
 
 func (nixy *NixyWrapper) PrepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
@@ -53,6 +88,11 @@ type executorEnvVars struct {
 
 	NixyShell             string `json:"NIXY_SHELL"`
 	NixyWorkspaceDir      string `json:"NIXY_WORKSPACE_DIR"`
+
+	// NixyWorkspaceLabel is just a display only alias for NIXY_WORKSPACE_DIR
+	// It comes useful in cases of git worktree integrations
+	NixyWorkspaceLabel      string `json:"NIXY_WORKSPACE_LABEL"`
+
 	NixyWorkspaceFlakeDir string `json:"NIXY_WORKSPACE_FLAKE_DIR"`
 	NixyBuildHook         string `json:"NIXY_BUILD_HOOK"`
 	NixConfDir            string `json:"NIX_CONF_DIR"`
@@ -75,6 +115,7 @@ func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
 
 		"NIXY_SHELL":               "true",
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,
+		"NIXY_WORKSPACE_LABEL":     e.NixyWorkspaceLabel,
 		"NIXY_WORKSPACE_FLAKE_DIR": e.NixyWorkspaceFlakeDir,
 		"NIXY_BUILD_HOOK":          e.NixyBuildHook,
 	}
