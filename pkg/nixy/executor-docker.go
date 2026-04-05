@@ -82,17 +82,36 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 	// Mount terminfo if TERMINFO env var is set
 	if terminfo := os.Getenv("TERMINFO"); terminfo != "" {
 		dockerCmd = append(dockerCmd,
-			"--tmpfs", nixy.executorArgs.EnvVars.TermInfo,
 			"-v", addMount(terminfo, nixy.executorArgs.EnvVars.TermInfo, "ro", "z"),
 		)
 	}
 
-	for _, mount := range nixy.Mounts {
+	mounts := nixy.Mounts
+	if ctx.NixyUseProfile {
+		mounts = append(mounts, nixy.profileNixy.Mounts...)
+	}
+
+	nixyShellEnvExpander := func(key string) string {
+		slog.Info("nixy profile", "env", nixy.profileNixy.Env)
+		if v, ok := nixy.profileNixy.Env[key]; ok {
+			return os.ExpandEnv(v)
+		}
+
+		switch key {
+			case "HOME":
+				return nixy.executorArgs.FakeHomeMountedPath
+			default:
+				return ""
+		}
+	}
+
+	for _, mount := range mounts {
 		attrs := []string{"z"}
 		if mount.ReadOnly {
 			attrs = append(attrs, "ro")
 		}
-		dockerCmd = append(dockerCmd, "-v", addMount(mount.Source, mount.Destination, attrs...))
+
+		dockerCmd = append(dockerCmd, "-v", addMount(os.ExpandEnv(mount.Source), os.Expand(mount.Destination, nixyShellEnvExpander), attrs...))
 	}
 
 	for k, v := range nixy.executorArgs.EnvVars.toMap(ctx) {
