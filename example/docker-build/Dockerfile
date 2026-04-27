@@ -1,13 +1,13 @@
-FROM ghcr.io/nxtcoder17/nix:latest AS builder
-# RUN curl -L0 https://github.com/nxtcoder17/nixy/releases/download/v1.4.0/nixy-linux-amd64 > /usr/local/bin/nixy && chmod +x /usr/local/bin/nixy
+FROM debian:bookworm-slim AS runtime
+COPY .builds/runtime/nix /nix
+COPY .builds/runtime/app-store-path /tmp/nixy-app-store-path
 
-RUN --mount=type=bind,source=nixy.yml,target=nixy.yml \
-  --mount=type=bind,source=./nixy,target=/usr/local/bin/nixy \
-  --mount=type=cache,target=/root/.local/share/nixy \
-  --mount=type=cache,target=/nix \
-  <<EOF
-nixy shell echo "nixy setup complete"
-curl -L0 https://google.com
-exit 1
-EOF
+# INFO: SINCE, docker can't copy symlinks, while the `app` directory in a nix build artifact is always a symlink to some path in /nix store, we need to do this shenanigan
+RUN ln -s "$(cat /tmp/nixy-app-store-path)" /app \
+  && rm -f /tmp/nixy-app-store-path
 
+FROM gcr.io/distroless/static-debian12
+COPY --from=runtime /nix /nix
+COPY --from=runtime /app /app
+ENV PATH="/app/bin:${PATH}"
+CMD ["python3", "--version"]

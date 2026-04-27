@@ -21,6 +21,7 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 		ProjectDir:  ctx.PWD,
 		BuildTarget: target,
 		CopyPaths:   build.Paths,
+		Command:     build.Command,
 	})
 	if err != nil {
 		return err
@@ -60,6 +61,7 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 		ProjectDir:  n.PWD,
 		BuildTarget: target,
 		CopyPaths:   build.Paths,
+		Command:     build.Command,
 	})
 	if err != nil {
 		return err

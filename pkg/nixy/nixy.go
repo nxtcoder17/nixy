@@ -115,6 +115,7 @@ type ExecutorArgs struct {
 type Build struct {
 	Packages []*NormalizedPackage `yaml:"packages"`
 	Paths    []string             `yaml:"paths"`
+	Command  string               `yaml:"command"`
 }
 
 type InShellNixy struct {

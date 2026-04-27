@@ -5,15 +5,26 @@
 
 set -e
 
+{{- if .Command }}
+workspace_dir="$PWD"
+cd {{$projectDir}}
+
+{{$command := .Command}}
+{{$command}}
+
+cd "$workspace_dir"
+{{- end }}
+
 {{- range $p := .CopyPaths }}
 mkdir -p $(dirname {{$p}})
 cp -r {{$projectDir}}/{{$p}} ./$(dirname {{$p}})
 {{- end }}
 
-dir="{{$projectDir}}/.builds/{{$buildTarget}}"
+dir="{{$projectDir}}/.dist/{{$buildTarget}}"
 mkdir -p $dir
 
 nix build .#{{$buildTarget}} --no-link -o $dir/app
+readlink -f $dir/app > $dir/app-store-path
 
 {{- range $p := .CopyPaths }}
 rm -rf {{$p}}
