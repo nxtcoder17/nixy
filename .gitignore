@@ -2,3 +2,5 @@
 bin/
 .secrets
 .idea
+.builds
+.dist

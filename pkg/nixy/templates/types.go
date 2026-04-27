@@ -142,6 +142,7 @@ type BuildHookParams struct {
 	ProjectDir  string
 	BuildTarget string
 	CopyPaths   []string
+	Command     string
 }
 
 func RenderBuildHook(params BuildHookParams) ([]byte, error) {

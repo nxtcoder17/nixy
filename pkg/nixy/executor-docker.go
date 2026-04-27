@@ -2,11 +2,11 @@ package nixy
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"log/slog"
 )
 
 func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
@@ -29,7 +29,6 @@ func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) 
 			XDGCacheHome:          filepath.Join(fakeHomeMountedPath, ".cache"),
 			XDGDataHome:           filepath.Join(fakeHomeMountedPath, ".local", "share"),
 			NixyWorkspaceDir:      ctx.PWD,
-			NixyWorkspaceLabel:    filepath.Base(ctx.PWD),
 			NixyWorkspaceFlakeDir: WorkspaceFlakeSandboxMountPath,
 			NixConfDir:            filepath.Join(runtimePaths.FakeHomeDir, ".config", "nix"),
 		},
@@ -39,11 +38,6 @@ func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) 
 }
 
 func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
-	isWorktreeEnabled, workspaceDir, _ := GitWorktreeEnabledWorkspace(ctx, ctx.PWD)
-	if isWorktreeEnabled {
-		nixy.executorArgs.EnvVars.NixyWorkspaceLabel = filepath.Base(workspaceDir) + ctx.PWD[len(workspaceDir):]
-	}
-
 	addMount := func(src, dest string, flags ...string) string {
 		return fmt.Sprintf("%s:%s:%s", src, dest, strings.Join(flags, ","))
 	}
@@ -75,8 +69,8 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		"-v", addMount(nixy.runtimePaths.NixDir, nixy.executorArgs.NixDirMountedPath, "z"),
 
 		// STEP: project dir
-		"-v", addMount(workspaceDir, workspaceDir, "Z"),
-		"-v", addMount(workspaceDir, WorkspaceDirSandboxMountPath, "Z"),
+		"-v", addMount(nixy.executorArgs.EnvVars.NixyGitRoot, nixy.executorArgs.EnvVars.NixyGitRoot, "Z"),
+		"-v", addMount(nixy.executorArgs.EnvVars.NixyGitRoot, WorkspaceDirSandboxMountPath, "Z"),
 	}
 
 	// Mount terminfo if TERMINFO env var is set
@@ -98,10 +92,10 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		}
 
 		switch key {
-			case "HOME":
-				return nixy.executorArgs.FakeHomeMountedPath
-			default:
-				return ""
+		case "HOME":
+			return nixy.executorArgs.FakeHomeMountedPath
+		default:
+			return ""
 		}
 	}
 
@@ -129,7 +123,6 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 	dockerCmd = append(dockerCmd, args...)
 
 	slog.Info("HERE ...", "docker-cmd", dockerCmd)
-
 
 	return exec.CommandContext(ctx, dockerCmd[0], dockerCmd[1:]...), nil
 }

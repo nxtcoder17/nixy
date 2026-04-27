@@ -110,13 +110,21 @@ func (n *NixyWrapper) nixShellExec(ctx *Context, program string) (*exec.Cmd, err
 	profileLibs := n.getProfileLibraries(ctx)
 	profileEnvVars := n.getProfileEnvVars(ctx)
 
-	if program == "" {
-		if v, ok := os.LookupEnv("SHELL"); ok {
-			program = filepath.Base(v)
-		} else {
-			program = "bash"
+	program = func() string {
+		if program != "" {
+			return program
 		}
-	}
+
+		if v, ok := n.Env["SHELL"]; ok {
+			return v
+		}
+
+		if v, ok := os.LookupEnv("SHELL"); ok {
+			return filepath.Base(v)
+		}
+
+		return "bash"
+	}()
 
 	executorEnv := n.executorArgs.EnvVars.toMap(ctx)
 
@@ -158,7 +166,7 @@ func (n *NixyWrapper) nixShellExec(ctx *Context, program string) (*exec.Cmd, err
 	}
 
 	scripts = append(scripts, "source shell-init.sh")
-	scripts = append(scripts, program)
+	scripts = append(scripts, "exec "+program)
 
 	nixShell := []string{"shell"}
 
@@ -175,12 +183,8 @@ func (n *NixyWrapper) nixShellExec(ctx *Context, program string) (*exec.Cmd, err
 		return nil, err
 	}
 
-	if ctx.NixyMode == LocalMode {
-		cmd.Env = append(cmd.Env, "NIXY_SHELL=true")
-		cmd.Env = append(cmd.Env, os.Environ()...)
-	} else {
-		cmd.Env = append(cmd.Env, n.executorArgs.EnvVars.ToEnviron(ctx)...)
-	}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	cmd.Env = append(cmd.Env, n.executorArgs.EnvVars.ToEnviron(ctx)...)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
@@ -191,6 +195,14 @@ func (n *NixyWrapper) nixShellExec(ctx *Context, program string) (*exec.Cmd, err
 
 func (n *NixyWrapper) Shell(ctx *Context, program string) error {
 	start := time.Now()
+
+	n.executorArgs.EnvVars.NixyGitRoot = ctx.PWD
+
+	gitRoot, ok := GetGitRootForWorkspace(ctx, ctx.PWD)
+	if ok {
+		n.executorArgs.EnvVars.NixyGitRoot = gitRoot
+	}
+
 	cmd, err := n.nixShellExec(ctx, program)
 	if err != nil {
 		return err

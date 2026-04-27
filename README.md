@@ -142,15 +142,77 @@ Built-in environment variables available:
 - `NIXY_ARCH_FULL` - Full architecture string (e.g., x86_64)
 
 ### 🔧 Build System
-Define reproducible builds:
+Define reproducible runtime bundles that can be used outside `nixy shell` (for example in Docker images):
 ```yaml
 builds:
-  my-app:
+  runtime:
+    command: |
+      go build -o ./bin/my-app ./cmd/my-app
     packages:
-      - out/my-binary
-      - config.json
-    hook: |
-      go build -o out/my-binary ./cmd/main.go
+      - python314
+      - curl
+      - nginx
+    paths:
+      - bin/my-app
+      - scripts/
+      - config/
+```
+
+Run a target:
+```bash
+nixy build runtime
+```
+
+Output layout:
+- `.dist/<target>/app` - symlink to built output in `/nix/store`
+- `.dist/<target>/nix/store` - copied recursive store closure for that output
+
+This makes it easy to copy the runtime bundle into container images and run the binaries without entering a nix shell.
+
+Docker usage pattern:
+1. Run `nixy build <target>` in your project.
+2. Copy `.dist/<target>/nix` and `.dist/<target>/app` into the image.
+3. Add `<copied-app>/bin` to `PATH`.
+
+#### GitHub Actions (build + artifact)
+```yaml
+name: Build runtime bundle
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: Install nixy
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/nixy" \
+            https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-amd64
+          chmod +x "$HOME/.local/bin/nixy"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build target
+        working-directory: example/docker-build
+        run: nixy build runtime
+
+      - name: Build Docker image from runtime bundle
+        run: |
+          docker build \
+            -f example/docker-build/Dockerfile \
+            -t nixy-runtime:ci \
+            example/docker-build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nixy-runtime
+          path: example/docker-build/.dist/runtime/
 ```
 
 ### 🏃 Multiple Execution Backends
@@ -384,10 +446,12 @@ onShellEnter: |
 # Build targets
 builds:
   <target>:
-    packages:
+    command: |                          # Optional command run before packaging paths
+      <shell commands>
+    packages:                            # Optional nix packages in output
       - <package>
     paths:
-      - <file-path-1>
+      - <file-path-1>                    # Optional project paths to include
       - <file-path-2>
 ```
 
