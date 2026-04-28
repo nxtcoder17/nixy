@@ -244,10 +244,6 @@
             {{- /* SOURCE_DATE_EPOCH = "0"; */}}
             src = [
               closure
-
-              {{- range $v := $build.Paths }}
-              {{$v}}
-              {{- end }}
             ];
 
             unpackPhase = ":";
@@ -261,13 +257,24 @@
                   # INFO: stripHash just removes nix hash part from the given name
                   echo "[#] copying dir: $item"
                   result=$(stripHash "$item" )
-                  cp -r "$item"/!(share) $out
+
+                  # INFO: build-env is a special nix directory , which is always created during one of the previous phases
+                  # so, ignoring that
+                  if [ "$result" = "build-env" ]; then
+                    continue
+                  fi
+
+                  cp -r "$item"/!(share) "$out"
                 else
                   echo "[#] copying file: $item"
-                  result=$(stripHash "$item" )
                   cp "$item" $out/$(stripHash "$item")
                 fi
               done
+
+              {{- range $v := $build.Paths }}
+              mkdir -p "$out/$(dirname "{{$v}}")" 
+              cp -r "{{ printf "${%s}" $v }}" "$out/{{$v}}"
+              {{- end }}
             '';
           };
 
