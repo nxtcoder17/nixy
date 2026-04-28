@@ -30,13 +30,13 @@ readlink -f $dir/app > $dir/app-store-path
 rm -rf {{$p}}
 {{- end }}
 
-pushd $dir
+pushd $dir > /dev/null
 rm -rf nix
 mkdir -p ./nix/store
 cp -r $(nix path-info --recursive ./app) ./nix/store
 
 chown $EUID -R ./nix
 chmod 700 -R ./nix
-popd
+popd > /dev/null
 
 {{- end }}
