@@ -202,26 +202,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: cachix/install-nix-action@v31
-
-      - name: Install nixy
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL -o "$HOME/.local/bin/nixy" \
-            https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-amd64
-          chmod +x "$HOME/.local/bin/nixy"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: nxtcoder17/nixy@v1
 
       - name: Build target
         working-directory: example/docker-build
-        run: nixy build runtime --dockerfile
+        run: nixy build runtime
 
       - name: Build Docker image from runtime bundle
+        working-directory: example/docker-build
         run: |
           docker build \
-            -f example/docker-build/Dockerfile \
+            -f Dockerfile \
             -t nixy-runtime:ci \
-            example/docker-build
+            .
 
       - uses: actions/upload-artifact@v4
         with:
