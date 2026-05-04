@@ -1,0 +1,59 @@
+name: Setup Nixy
+description: Install Nix and nixy for CI workflows
+
+inputs:
+  version:
+    description: Nixy version to install, or latest
+    required: false
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31
+
+    - name: Install nixy
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: |
+        set -euo pipefail
+
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64)
+            artifact="nixy-linux-amd64"
+            ;;
+          Linux-ARM64)
+            artifact="nixy-linux-arm64"
+            ;;
+          macOS-X64)
+            artifact="nixy-darwin-amd64"
+            ;;
+          macOS-ARM64)
+            artifact="nixy-darwin-arm64"
+            ;;
+          *)
+            echo "Unsupported runner: ${RUNNER_OS}-${RUNNER_ARCH}" >&2
+            exit 1
+            ;;
+        esac
+
+        install_dir="${RUNNER_TEMP}/nixy/bin"
+        mkdir -p "$install_dir"
+
+        if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
+          url="https://github.com/nxtcoder17/nixy/releases/latest/download/${artifact}"
+        else
+          url="https://github.com/nxtcoder17/nixy/releases/download/${VERSION}/${artifact}"
+        fi
+
+        curl --fail --silent --show-error --location --retry 3 "$url" --output "${install_dir}/nixy"
+        chmod +x "${install_dir}/nixy"
+        echo "$install_dir" >> "$GITHUB_PATH"
+
+    - name: Verify nixy
+      shell: bash
+      run: nixy --help >/dev/null
