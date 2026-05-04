@@ -11,7 +11,7 @@ func profilePath(profile string) string {
 	return filepath.Join(profileBasePath, profile)
 }
 
-func workspaceNixyDir(workspaceDir string) string {
+func workspaceNixyDirPath(workspaceDir string) string {
 	return filepath.Join(workspaceDir, ".nixy")
 }
 

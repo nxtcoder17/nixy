@@ -265,16 +265,16 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 	}
 
 	// Always create runtime paths (needed for workspace flake storage)
-	runtimePaths, err := NewRuntimePaths(ctx.NixyProfile)
+	runtimePaths, err := NewRuntimePaths(ctx.NixyProfile, ctx.PWD)
 	if err != nil {
 		return nil, err
 	}
 
-	hasHashChanged, err := compareAndSaveHash(filepath.Join(workspaceNixyDir(ctx.PWD), configHashFileName), nc.sha256Sum)
+	hasHashChanged, err := compareAndSaveHash(filepath.Join(runtimePaths.WorkspaceNixyDir, configHashFileName), nc.sha256Sum)
 	if err != nil {
 		return nil, err
 	}
-	if !hasHashChanged && !workspaceGeneratedFilesExist(workspaceNixyDir(ctx.PWD)) {
+	if !hasHashChanged && !workspaceGeneratedFilesExist(runtimePaths.WorkspaceNixyDir) {
 		hasHashChanged = true
 	}
 

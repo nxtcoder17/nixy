@@ -11,6 +11,7 @@ import (
 
 func UseBubbleWrap(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 	fakeHomeMountedPath := "/home/nixy"
+	wsHostPath := runtimePaths.WorkspaceNixyDir
 
 	bwrap := ExecutorArgs{
 		NixBinaryMountedPath:         "/nix/bin/nix",
@@ -18,7 +19,7 @@ func UseBubbleWrap(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, err
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
 		WorkspaceFlakeDirMountedPath: WorkspaceFlakeSandboxMountPath,
-		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(ctx.PWD),
+		WorkspaceFlakeDirHostPath:    wsHostPath,
 
 		EnvVars: executorEnvVars{
 			User:                  "nixy",

@@ -214,8 +214,8 @@
               source "shell-enter.sh"
             fi
 
-            if [ -n "$NIXY_BUILD_HOOK" ] && [ -e "$NIXY_BUILD_HOOK" ]; then
-              source "$NIXY_BUILD_HOOK"
+            if [ -n "$NIXY_BUILD_SCRIPT" ] && [ -e "$NIXY_BUILD_SCRIPT" ]; then
+              source "$NIXY_BUILD_SCRIPT"
             fi
 
             cd {{$projectDir}}

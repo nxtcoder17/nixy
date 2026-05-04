@@ -11,6 +11,7 @@ import (
 type RuntimePaths struct {
 	Name             string // profile name (used for directory organization)
 	BasePath         string // ~/.local/share/nixy/profiles/<name>
+	WorkspaceNixyDir string // project-local .nixy directory, when a workspace is available
 	FakeHomeDir      string // fake home directory for sandboxing
 	NixDir           string // nix store directory
 	StaticNixBinPath string // path to static nix binary
@@ -18,14 +19,19 @@ type RuntimePaths struct {
 
 // NewRuntimePaths creates and initializes the runtime paths for a given profile name.
 // This is always called regardless of NIXY_USE_PROFILE setting.
-func NewRuntimePaths(name string) (*RuntimePaths, error) {
+func NewRuntimePaths(name string, workspaceDir ...string) (*RuntimePaths, error) {
 	basePath := filepath.Join(XDGDataDir(), "profiles", name)
 	nixDir := filepath.Join(basePath, "nix")
 	fakeHomeDir := filepath.Join(basePath, "fake-home")
+	workspaceNixyDir := ""
+	if len(workspaceDir) > 0 && workspaceDir[0] != "" {
+		workspaceNixyDir = workspaceNixyDirPath(workspaceDir[0])
+	}
 
 	rp := &RuntimePaths{
 		Name:             name,
 		BasePath:         basePath,
+		WorkspaceNixyDir: workspaceNixyDir,
 		FakeHomeDir:      fakeHomeDir,
 		NixDir:           nixDir,
 		StaticNixBinPath: filepath.Join(nixDir, "bin", "nix"),
@@ -42,6 +48,7 @@ func NewRuntimePaths(name string) (*RuntimePaths, error) {
 func (rp *RuntimePaths) CreateDirs() error {
 	dirs := []string{
 		rp.BasePath,
+		rp.WorkspaceNixyDir,
 		rp.FakeHomeDir,
 		filepath.Dir(rp.StaticNixBinPath),
 		// we need to have this nix dir to be used for nix store
@@ -50,6 +57,9 @@ func (rp *RuntimePaths) CreateDirs() error {
 	}
 
 	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
