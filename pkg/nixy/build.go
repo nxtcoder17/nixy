@@ -7,9 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 )
+
+func buildScriptFileName(target string) string {
+	safeTarget := strings.NewReplacer("/", "_", "\\", "_").Replace(target)
+	return fmt.Sprintf("build.%s.sh", safeTarget)
+}
 
 func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 	build, ok := nixy.Builds[target]
@@ -17,7 +23,7 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 		return fmt.Errorf("build target (%s) does not exist", target)
 	}
 
-	b, err := templates.RenderBuildHook(templates.BuildHookParams{
+	b, err := templates.RenderBuildScript(templates.BuildHookParams{
 		WorkDir:     build.BuildDir(ctx.PWD),
 		BuildTarget: target,
 		OutputDir:   build.OutputDir(ctx.PWD),
@@ -28,11 +34,12 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(nixy.executorArgs.WorkspaceFlakeDirHostPath, buildHookFileName), b, 0o644); err != nil {
+	buildScript := buildScriptFileName(target)
+	if err := os.WriteFile(filepath.Join(nixy.executorArgs.WorkspaceFlakeDirHostPath, buildScript), b, 0o644); err != nil {
 		return err
 	}
 
-	nixy.executorArgs.EnvVars.NixyBuildHook = "true"
+	nixy.executorArgs.EnvVars.NixyBuildHook = buildScript
 
 	cmd, err := nixy.nixShellExec(ctx, "echo build successfull")
 	if err != nil {
@@ -58,7 +65,7 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 		return fmt.Errorf("build target (%s) does not exist", target)
 	}
 
-	b, err := templates.RenderBuildHook(templates.BuildHookParams{
+	b, err := templates.RenderBuildScript(templates.BuildHookParams{
 		WorkDir:     build.BuildDir(n.PWD),
 		BuildTarget: target,
 		OutputDir:   build.OutputDir(n.PWD),
@@ -74,7 +81,7 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 		return fmt.Errorf("NIXY_WORKSPACE_FLAKE_DIR must be set in a nixy shell")
 	}
 
-	buildHookScript := filepath.Join(wsFlakeDir, buildHookFileName)
+	buildHookScript := filepath.Join(wsFlakeDir, buildScriptFileName(target))
 
 	if err := os.WriteFile(buildHookScript, b, 0o644); err != nil {
 		return err

@@ -1,7 +1,6 @@
 package nixy
 
 import (
-	"crypto/md5"
 	"errors"
 	"fmt"
 	"os"
@@ -9,9 +8,8 @@ import (
 	"path/filepath"
 )
 
-func deriveWorkspacePath(workspacesDir, cwd string) string {
-	sum := md5.Sum([]byte(cwd))
-	return filepath.Join(workspacesDir, fmt.Sprintf("%x-%s", sum, filepath.Base(cwd)))
+func deriveWorkspacePath(cwd string) string {
+	return workspaceNixyDir(cwd)
 }
 
 func UseLocal(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
@@ -22,7 +20,7 @@ func UseLocal(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 		}
 	}
 
-	wsHostPath := deriveWorkspacePath(runtimePaths.WorkspacesDir, ctx.PWD)
+	wsHostPath := deriveWorkspacePath(ctx.PWD)
 
 	return &ExecutorArgs{
 		NixBinaryMountedPath:         nixPath,

@@ -120,16 +120,22 @@ Download and install packages directly from URLs with environment variable expan
 ```yaml
 packages:
   - name: kubectl
-    url: https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl
-    sha256: "abc123..."  # Optional, auto-fetched if not provided
-    
+    sources:
+      linux/amd64:
+        url: https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl
+        sha256: "abc123..."  # Optional, auto-fetched if not provided
+     
   - name: terraform
-    url: https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
+    sources:
+      linux/amd64:
+        url: https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
     # Automatically detects archive type and extracts
-    
+     
   # Environment variables are expanded in URLs
   - name: my-tool
-    url: https://github.com/org/tool/releases/download/v${MY_VERSION}/tool-${NIXY_OS}-${NIXY_ARCH}.tar.gz
+    sources:
+      linux/amd64:
+        url: https://github.com/org/tool/releases/download/v${MY_VERSION}/tool-${NIXY_OS}-${NIXY_ARCH}.tar.gz
     # Uses MY_VERSION from env section and built-in NIXY_* vars
 
 env:
@@ -260,7 +266,8 @@ NIXY_EXECUTOR=bubblewrap nixy shell
 ### 👤 Profile Management
 
 > [!NOTE]
-> Profiles provide file system isolation. Different dev shells within the same profile share some filesystems like nix-store, fake-home, etc.
+> Profiles provide runtime isolation. Different dev shells within the same profile share runtime filesystems like nix-store and fake-home.
+> Profile-level `nixy.yml` config is loaded only when `NIXY_USE_PROFILE=true`.
 
 Keep separate development profiles:
 ```bash
@@ -273,6 +280,9 @@ NIXY_PROFILE=work nixy shell
 
 # List profiles
 nixy profile list
+
+# Edit profile config
+nixy profile edit work
 ```
 
 ## Advanced Features
@@ -288,7 +298,9 @@ packages:
   - nodejs                    # From default nixpkgs
   - older#python311           # Python from older nixpkgs version
   - name: custom-tool
-    url: https://example.com/tool.tar.gz
+    sources:
+      linux/amd64:
+        url: https://example.com/tool.tar.gz
 ```
 
 ### 🗂️ Smart Archive Packages Handling
@@ -307,6 +319,19 @@ All execution backends provide pure, reproducible environments with:
 - Configuration change detection via SHA256
 - Rebuilds only when necessary
 - Fast subsequent shells
+
+### 🔎 Inspectable Generated Files
+Nixy writes generated workspace files to the project-local `.nixy/` directory:
+
+- `.nixy/flake.nix` - generated Nix flake used for the shell/build environment
+- `.nixy/flake.lock` - generated lock file for the workspace flake
+- `.nixy/shell-enter.sh` - generated script from `onShellEnter`
+- `.nixy/shell-env.sh` - generated environment from `nix print-dev-env`
+- `.nixy/build.<target>.sh` - generated build script for a target
+- `.nixy/config.hash` - hash used to decide when generated files need refreshing
+
+Build outputs remain under each build target directory, for example `<build.dir>/.nixy/dist`.
+`.nixy/` should be gitignored because these files are regenerated from `nixy.yml`.
 
 ### 🎨 Environment Customization
 ```yaml
@@ -339,13 +364,9 @@ mounts:
 - `nixy shell:hook <shell>` - Output shell hook script for auto-activation (supports: bash, zsh, fish)
 
 ### Profile Commands
-- `nixy profile create <name>` - Create new profile
+- `nixy profile create <name>` - Create a profile namespace
+- `nixy profile edit [name]` - Edit profile-level config
 - `nixy profile list` - List all profiles
-- `nixy profile remove <name>` - Remove profile
-
-### Utility Commands
-- `nixy validate` - Validate nixy.yml
-- `nixy version` - Show version information
 
 ## Examples
 
@@ -365,7 +386,9 @@ packages:
 
   # Tools
   - name: stripe-cli
-    url: https://github.com/stripe/stripe-cli/releases/download/v1.19.1/stripe_1.19.1_linux_x86_64.tar.gz
+    sources:
+      linux/amd64:
+        url: https://github.com/stripe/stripe-cli/releases/download/v1.19.1/stripe_1.19.1_linux_x86_64.tar.gz
 
 libraries:
   - postgresql
@@ -402,11 +425,17 @@ packages:
   
   # Kubernetes tools
   - name: kubectl
-    url: https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl
+    sources:
+      linux/amd64:
+        url: https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl
   - name: helm
-    url: https://get.helm.sh/helm-v3.13.0-linux-amd64.tar.gz
+    sources:
+      linux/amd64:
+        url: https://get.helm.sh/helm-v3.13.0-linux-amd64.tar.gz
   - name: k9s
-    url: https://github.com/derailed/k9s/releases/download/v0.27.4/k9s_Linux_amd64.tar.gz
+    sources:
+      linux/amd64:
+        url: https://github.com/derailed/k9s/releases/download/v0.27.4/k9s_Linux_amd64.tar.gz
 
 onShellEnter: |
   export KUBECONFIG=$HOME/.kube/config
@@ -427,9 +456,14 @@ packages:
   - <package-name>                    # Simple package (uses default)
   - <key>#<package>                   # From specific nixpkgs key
   - name: <name>                      # URL package
-    url: <url>
-    sha256: <hash>                    # Optional
-    type: binary|archive              # Auto-detected
+    sources:
+      linux/amd64:
+        url: <url>
+        sha256: <hash>                # Optional
+    binPaths:
+      - <relative-bin-dir>            # Optional
+    installHook: |                    # Optional
+      <shell commands>
 
 # System libraries
 libraries:
@@ -467,7 +501,8 @@ builds:
 ## Environment Variables
 
 - `NIXY_EXECUTOR` - Execution backend (local, local-ignore-env, docker, bubblewrap)
-- `NIXY_PROFILE`  - Profile name to use
+- `NIXY_PROFILE` - Profile namespace to use
+- `NIXY_USE_PROFILE` - Load profile-level config when set to `true` or `1`
 
 ## Troubleshooting
 

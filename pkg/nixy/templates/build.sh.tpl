@@ -1,4 +1,4 @@
-{{- define "build-hook" }}
+{{- define "build" }}
 
 {{- $projectDir := .WorkDir -}}
 {{- $buildTarget := .BuildTarget -}}
@@ -17,18 +17,22 @@ cd "$workspace_dir"
 {{- end }}
 
 {{- range $p := .CopyPaths }}
-mkdir -p $(dirname {{$p}})
-cp -r {{$projectDir}}/{{$p}} ./$(dirname {{$p}})
+mkdir -p "$(dirname "{{$p}}")"
+cp -r "{{$projectDir}}/{{$p}}" "./$(dirname "{{$p}}")"
 {{- end }}
 
 dir="{{$outputDir}}"
 mkdir -p $dir
 
-nix build .#{{$buildTarget}} --no-link -o $dir/app
+nix build path:.#{{$buildTarget}} --no-link -o $dir/app
 readlink -f $dir/app > $dir/app-store-path
 
 {{- range $p := .CopyPaths }}
-rm -rf {{$p}}
+rm -rf "{{$p}}"
+parent_dir="$(dirname "{{$p}}")"
+if [ "$parent_dir" != "." ]; then
+  rmdir -p "$parent_dir" 2>/dev/null || true
+fi
 {{- end }}
 
 pushd $dir > /dev/null

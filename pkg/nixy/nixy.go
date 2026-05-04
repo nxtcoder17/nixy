@@ -270,9 +270,12 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 		return nil, err
 	}
 
-	hasHashChanged, err := compareAndSaveHash(filepath.Join(flakeDirPath(ctx.NixyProfile), "nixy.yml.sha256"), nc.sha256Sum)
+	hasHashChanged, err := compareAndSaveHash(filepath.Join(workspaceNixyDir(ctx.PWD), configHashFileName), nc.sha256Sum)
 	if err != nil {
 		return nil, err
+	}
+	if !hasHashChanged && !workspaceGeneratedFilesExist(workspaceNixyDir(ctx.PWD)) {
+		hasHashChanged = true
 	}
 
 	nixy := NixyWrapper{
@@ -296,7 +299,7 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 		if err != nil {
 			return nil, err
 		}
-		hasChanged, err := compareAndSaveHash(filepath.Join(profilePath(ctx.NixyProfile), "nixy.yml.sha256"), nc.sha256Sum)
+		hasChanged, err := compareAndSaveHash(filepath.Join(profilePath(ctx.NixyProfile), configHashFileName), nc.sha256Sum)
 		if err != nil {
 			return nil, err
 		}

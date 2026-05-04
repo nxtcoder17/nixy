@@ -16,11 +16,11 @@ var profileNixyYamlContent string
 //go:embed workspace-flake.nix.tpl
 var wsFlakeContent string
 
-//go:embed shell-hook.sh.tpl
-var shellHookScript string
+//go:embed shell-enter.sh.tpl
+var shellEnterScript string
 
-//go:embed build-hook.sh.tpl
-var buildHookScript string
+//go:embed build.sh.tpl
+var buildScript string
 
 //go:embed nix.conf.tpl
 var nixConf string
@@ -63,12 +63,12 @@ func init() {
 		panic(fmt.Errorf("failed to parse workspace flake.nix: %w", err))
 	}
 
-	if _, err := t.Parse(shellHookScript); err != nil {
-		panic(fmt.Errorf("failed to parse shell hook script: %w", err))
+	if _, err := t.Parse(shellEnterScript); err != nil {
+		panic(fmt.Errorf("failed to parse shell enter script: %w", err))
 	}
 
-	if _, err := t.Parse(buildHookScript); err != nil {
-		panic(fmt.Errorf("failed to parse build hook script: %w", err))
+	if _, err := t.Parse(buildScript); err != nil {
+		panic(fmt.Errorf("failed to parse build script: %w", err))
 	}
 
 	if _, err := t.Parse(nixConf); err != nil {
@@ -137,10 +137,10 @@ type ShellHookParams struct {
 	OnShellEnter string
 }
 
-func RenderShellHook(params ShellHookParams) ([]byte, error) {
+func RenderShellEnter(params ShellHookParams) ([]byte, error) {
 	b := new(bytes.Buffer)
-	if err := t.ExecuteTemplate(b, "shell-hook", params); err != nil {
-		return nil, fmt.Errorf("failed to render shell-hook.sh: %w", err)
+	if err := t.ExecuteTemplate(b, "shell-enter", params); err != nil {
+		return nil, fmt.Errorf("failed to render shell-enter.sh: %w", err)
 	}
 
 	return b.Bytes(), nil
@@ -154,10 +154,10 @@ type BuildHookParams struct {
 	Command     string
 }
 
-func RenderBuildHook(params BuildHookParams) ([]byte, error) {
+func RenderBuildScript(params BuildHookParams) ([]byte, error) {
 	b := new(bytes.Buffer)
-	if err := t.ExecuteTemplate(b, "build-hook", params); err != nil {
-		return nil, fmt.Errorf("failed to render build-hook.sh: %w", err)
+	if err := t.ExecuteTemplate(b, "build", params); err != nil {
+		return nil, fmt.Errorf("failed to render build script: %w", err)
 	}
 
 	return b.Bytes(), nil
