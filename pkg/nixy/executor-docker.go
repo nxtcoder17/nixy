@@ -18,7 +18,7 @@ func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) 
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
 		WorkspaceFlakeDirMountedPath: WorkspaceFlakeSandboxMountPath,
-		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(runtimePaths.WorkspacesDir, ctx.PWD),
+		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(ctx.PWD),
 
 		EnvVars: executorEnvVars{
 			User:                  "nixy",

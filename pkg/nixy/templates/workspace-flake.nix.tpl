@@ -210,12 +210,12 @@
             export {{$k}}="{{$v}}"
             {{- end }}
 
-            if [ -e shell-hook.sh ]; then
-              source "shell-hook.sh"
+            if [ -e shell-enter.sh ]; then
+              source "shell-enter.sh"
             fi
 
-            if [ "$NIXY_BUILD_HOOK" = "true" ] && [ -e build-hook.sh ]; then
-              source "build-hook.sh"
+            if [ -n "$NIXY_BUILD_HOOK" ] && [ -e "$NIXY_BUILD_HOOK" ]; then
+              source "$NIXY_BUILD_HOOK"
             fi
 
             cd {{$projectDir}}

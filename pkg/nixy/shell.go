@@ -15,9 +15,19 @@ import (
 )
 
 const (
-	shellHookFileName = "shell-hook.sh"
-	buildHookFileName = "build-hook.sh"
+	shellEnterFileName = "shell-enter.sh"
+	shellEnvFileName   = "shell-env.sh"
+	configHashFileName = "config.hash"
 )
+
+func workspaceGeneratedFilesExist(dir string) bool {
+	for _, file := range []string{"flake.nix", shellEnterFileName, shellEnvFileName} {
+		if !exists(filepath.Join(dir, file)) {
+			return false
+		}
+	}
+	return true
+}
 
 // getProfilePackages returns profile packages if NIXY_USE_PROFILE is enabled
 func (n *NixyWrapper) getProfilePackages(ctx *Context) []*NormalizedPackage {
@@ -83,16 +93,16 @@ func (nix *NixyWrapper) writeWorkspaceFlake(
 		return err
 	}
 
-	shellHook, err := templates.RenderShellHook(templates.ShellHookParams{
+	shellHook, err := templates.RenderShellEnter(templates.ShellHookParams{
 		OnShellEnter: nix.OnShellEnter,
 	})
 	if err != nil {
 		return err
 	}
 
-	slog.Debug("writing shell-hook.sh")
-	if err := os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, "shell-hook.sh"), []byte(shellHook), 0o744); err != nil {
-		return fmt.Errorf("failed to write shell-hook.sh: %w", err)
+	slog.Debug("writing shell-enter.sh")
+	if err := os.WriteFile(filepath.Join(nix.executorArgs.WorkspaceFlakeDirHostPath, shellEnterFileName), []byte(shellHook), 0o744); err != nil {
+		return fmt.Errorf("failed to write shell-enter.sh: %w", err)
 	}
 
 	flake, err := templates.RenderWorkspaceFlake(flakeParams)
@@ -161,11 +171,11 @@ func (n *NixyWrapper) nixShellExec(ctx *Context, program string) (*exec.Cmd, err
 	if n.hasHashChanged {
 		scripts = append(scripts,
 			// [READ about nix print-dev-env](https://nix.dev/manual/nix/2.18/command-ref/new-cli/nix3-print-dev-env)
-			"nix print-dev-env . > shell-init.sh",
+			fmt.Sprintf("nix print-dev-env path:. > %s", shellEnvFileName),
 		)
 	}
 
-	scripts = append(scripts, "source shell-init.sh")
+	scripts = append(scripts, fmt.Sprintf("source %s", shellEnvFileName))
 	scripts = append(scripts, "exec "+program)
 
 	nixShell := []string{"shell"}

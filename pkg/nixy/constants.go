@@ -1,9 +1,6 @@
 package nixy
 
 import (
-	"crypto/md5"
-	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 )
@@ -14,16 +11,8 @@ func profilePath(profile string) string {
 	return filepath.Join(profileBasePath, profile)
 }
 
-func flakeDirPath(profile string) string {
-	pwd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	h := md5.New()
-	h.Write([]byte(pwd))
-
-	return filepath.Join(profilePath(profile), "workspaces", fmt.Sprintf("%x-%s", h.Sum(nil), filepath.Base(pwd)))
+func workspaceNixyDir(workspaceDir string) string {
+	return filepath.Join(workspaceDir, ".nixy")
 }
 
 var osArchEnv = map[string]string{

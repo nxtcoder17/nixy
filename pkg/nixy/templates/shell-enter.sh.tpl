@@ -1,3 +1,3 @@
-{{- define "shell-hook" }}
+{{- define "shell-enter" }}
 {{- .OnShellEnter }}
 {{- end }}
