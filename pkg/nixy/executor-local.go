@@ -8,10 +8,6 @@ import (
 	"path/filepath"
 )
 
-func deriveWorkspacePath(cwd string) string {
-	return workspaceNixyDir(cwd)
-}
-
 func UseLocal(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 	nixPath, err := exec.LookPath("nix")
 	if err != nil {
@@ -20,7 +16,7 @@ func UseLocal(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 		}
 	}
 
-	wsHostPath := deriveWorkspacePath(ctx.PWD)
+	wsHostPath := runtimePaths.WorkspaceNixyDir
 
 	return &ExecutorArgs{
 		NixBinaryMountedPath:         nixPath,

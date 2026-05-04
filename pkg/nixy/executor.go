@@ -79,7 +79,7 @@ type executorEnvVars struct {
 	NixyGitRoot string `json:"NIXY_GIT_ROOT"`
 
 	NixyWorkspaceFlakeDir string `json:"NIXY_WORKSPACE_FLAKE_DIR"`
-	NixyBuildHook         string `json:"NIXY_BUILD_HOOK"`
+	NixyBuildScript       string `json:"NIXY_BUILD_SCRIPT"`
 	NixConfDir            string `json:"NIX_CONF_DIR"`
 }
 
@@ -102,7 +102,7 @@ func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,
 		"NIXY_GIT_ROOT":            e.NixyGitRoot,
 		"NIXY_WORKSPACE_FLAKE_DIR": e.NixyWorkspaceFlakeDir,
-		"NIXY_BUILD_HOOK":          e.NixyBuildHook,
+		"NIXY_BUILD_SCRIPT":        e.NixyBuildScript,
 	}
 
 	if e.NixConfDir != "" {

@@ -11,6 +11,7 @@ import (
 
 func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) {
 	fakeHomeMountedPath := "/home/nixy"
+	wsHostPath := runtimePaths.WorkspaceNixyDir
 
 	dockerCfg := ExecutorArgs{
 		NixBinaryMountedPath:         "/nixy/nix",
@@ -18,7 +19,7 @@ func UseDocker(ctx *Context, runtimePaths *RuntimePaths) (*ExecutorArgs, error) 
 		FakeHomeMountedPath:          fakeHomeMountedPath,
 		NixDirMountedPath:            "/nix",
 		WorkspaceFlakeDirMountedPath: WorkspaceFlakeSandboxMountPath,
-		WorkspaceFlakeDirHostPath:    deriveWorkspacePath(ctx.PWD),
+		WorkspaceFlakeDirHostPath:    wsHostPath,
 
 		EnvVars: executorEnvVars{
 			User:                  "nixy",

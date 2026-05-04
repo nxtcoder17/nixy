@@ -327,7 +327,7 @@ Nixy writes generated workspace files to the project-local `.nixy/` directory:
 - `.nixy/flake.lock` - generated lock file for the workspace flake
 - `.nixy/shell-enter.sh` - generated script from `onShellEnter`
 - `.nixy/shell-env.sh` - generated environment from `nix print-dev-env`
-- `.nixy/build.<target>.sh` - generated build script for a target
+- `.nixy/build.<target>.sh` - generated build script for a target (`/` and `:` are replaced with `_`)
 - `.nixy/config.hash` - hash used to decide when generated files need refreshing
 
 Build outputs remain under each build target directory, for example `<build.dir>/.nixy/dist`.

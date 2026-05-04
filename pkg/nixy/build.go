@@ -13,8 +13,8 @@ import (
 )
 
 func buildScriptFileName(target string) string {
-	safeTarget := strings.NewReplacer("/", "_", "\\", "_").Replace(target)
-	return fmt.Sprintf("build.%s.sh", safeTarget)
+	target = strings.NewReplacer("/", "_", ":", "_").Replace(target)
+	return fmt.Sprintf("build.%s.sh", target)
 }
 
 func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
@@ -39,7 +39,7 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 		return err
 	}
 
-	nixy.executorArgs.EnvVars.NixyBuildHook = buildScript
+	nixy.executorArgs.EnvVars.NixyBuildScript = buildScript
 
 	cmd, err := nixy.nixShellExec(ctx, "echo build successfull")
 	if err != nil {
