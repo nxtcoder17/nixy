@@ -116,6 +116,23 @@ type Build struct {
 	Packages []*NormalizedPackage `yaml:"packages"`
 	Paths    []string             `yaml:"paths"`
 	Command  string               `yaml:"command"`
+	Dir      string               `yaml:"dir,omitempty"`
+}
+
+func (b Build) ResolvedDir() string {
+	if b.Dir == "" {
+		return "."
+	}
+
+	return filepath.Clean(b.Dir)
+}
+
+func (b Build) BuildDir(projectDir string) string {
+	return filepath.Join(projectDir, b.ResolvedDir())
+}
+
+func (b Build) OutputDir(projectDir string) string {
+	return filepath.Join(b.BuildDir(projectDir), ".nixy", "dist")
 }
 
 type InShellNixy struct {

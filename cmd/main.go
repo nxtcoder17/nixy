@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -15,7 +14,9 @@ import (
 	"time"
 
 	"github.com/nxtcoder17/fastlog"
+	errors "github.com/nxtcoder17/go.errors"
 	"github.com/nxtcoder17/nixy/pkg/nixy"
+	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 	"github.com/urfave/cli/v3"
 )
 
@@ -170,14 +171,25 @@ func main() {
 			{
 				Name:    "build",
 				Suggest: true,
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "dockerfile",
+						Usage: "generate a Dockerfile for the selected build target",
+					},
+				},
 				Action: func(ctx context.Context, c *cli.Command) error {
 					n, err := loadFromNixyfile(ctx, c)
 					if err != nil {
 						return err
 					}
+					target := c.Args().First()
 
-					if err := n.Build(n.Context, c.Args().First()); err != nil {
+					if err := n.Build(n.Context, target); err != nil {
 						return err
+					}
+
+					if c.Bool("dockerfile") {
+						return writeDockerfile(n.Context.PWD, n.Builds[target])
 					}
 
 					return nil
@@ -189,14 +201,25 @@ func main() {
 			{
 				Name:    "build",
 				Suggest: true,
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "dockerfile",
+						Usage: "generate a Dockerfile for the selected build target",
+					},
+				},
 				Action: func(ctx context.Context, c *cli.Command) error {
 					n, err := nixy.LoadInNixyShell(ctx)
 					if err != nil {
 						return err
 					}
+					target := c.Args().First()
 
-					if err := n.Build(ctx, c.Args().First()); err != nil {
+					if err := n.Build(ctx, target); err != nil {
 						return err
+					}
+
+					if c.Bool("dockerfile") {
+						return writeDockerfile(n.PWD, n.Builds[target])
 					}
 
 					return nil
@@ -300,4 +323,24 @@ func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.NixyWrapper, e
 	}
 
 	return nil, fmt.Errorf("failed to locate your nearest Nixyfile")
+}
+
+func writeDockerfile(projectDir string, build nixy.Build) error {
+	b, err := templates.RenderDockerfile()
+	if err != nil {
+		return err
+	}
+
+	dockerfilePath := filepath.Join(build.BuildDir(projectDir), "Dockerfile")
+	if _, err := os.Stat(dockerfilePath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return errors.New("failed to check dockerfile path").Wrap(err)
+	}
+
+	if err := os.WriteFile(dockerfilePath, b, 0o644); err != nil {
+		return errors.New("failed to write dockerfile path").Wrap(err)
+	}
+
+	return nil
 }
