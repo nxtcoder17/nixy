@@ -18,7 +18,7 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 	}
 
 	b, err := templates.RenderBuildHook(templates.BuildHookParams{
-		WorkDir:     ctx.PWD,
+		WorkDir:     build.BuildDir(ctx.PWD),
 		BuildTarget: target,
 		OutputDir:   build.OutputDir(ctx.PWD),
 		CopyPaths:   build.Paths,
@@ -59,7 +59,7 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 	}
 
 	b, err := templates.RenderBuildHook(templates.BuildHookParams{
-		WorkDir:     filepath.Join(n.PWD, build.Dir),
+		WorkDir:     build.BuildDir(n.PWD),
 		BuildTarget: target,
 		OutputDir:   build.OutputDir(n.PWD),
 		CopyPaths:   build.Paths,
