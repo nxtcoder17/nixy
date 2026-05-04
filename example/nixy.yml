@@ -1,7 +1,0 @@
-nixpkgs:
-  default: "b74a30dbc0a72e20df07d43109339f780b439291"
-
-packages:
-  - python314
-  - curl
-  - nginx

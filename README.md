@@ -146,6 +146,7 @@ Define reproducible runtime bundles that can be used outside `nixy shell` (for e
 ```yaml
 builds:
   runtime:
+    dir: .
     command: |
       go build -o ./bin/my-app ./cmd/my-app
     packages:
@@ -163,15 +164,22 @@ Run a target:
 nixy build runtime
 ```
 
+Generate a target-specific Dockerfile while building:
+```bash
+nixy build runtime --dockerfile
+```
+
 Output layout:
-- `.dist/<target>/app` - symlink to built output in `/nix/store`
-- `.dist/<target>/nix/store` - copied recursive store closure for that output
+- `<dir>/.nixy/dist/app` - symlink to built output in `/nix/store`
+- `<dir>/.nixy/dist/nix/store` - copied recursive store closure for that output
+
+`dir` is optional and defaults to `.`. It controls where the generated Dockerfile and `.nixy/dist` directory are written.
 
 This makes it easy to copy the runtime bundle into container images and run the binaries without entering a nix shell.
 
 Docker usage pattern:
-1. Run `nixy build <target>` in your project.
-2. Copy `.dist/<target>/nix` and `.dist/<target>/app` into the image.
+1. Run `nixy build <target> --dockerfile` in your project.
+2. Build the image using the target's `dir` as the Docker build context.
 3. Add `<copied-app>/bin` to `PATH`.
 
 #### GitHub Actions (build + artifact)
@@ -200,7 +208,7 @@ jobs:
 
       - name: Build target
         working-directory: example/docker-build
-        run: nixy build runtime
+        run: nixy build runtime --dockerfile
 
       - name: Build Docker image from runtime bundle
         run: |
@@ -212,7 +220,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nixy-runtime
-          path: example/docker-build/.dist/runtime/
+          path: example/docker-build/.nixy/dist/
 ```
 
 ### 🏃 Multiple Execution Backends
@@ -446,6 +454,7 @@ onShellEnter: |
 # Build targets
 builds:
   <target>:
+    dir: .                              # Optional Docker/output context directory, defaults to .
     command: |                          # Optional command run before packaging paths
       <shell commands>
     packages:                            # Optional nix packages in output

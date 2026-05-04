@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	errors "github.com/nxtcoder17/go.errors"
 	"strings"
 	"text/template"
 )
@@ -23,6 +24,9 @@ var buildHookScript string
 
 //go:embed nix.conf.tpl
 var nixConf string
+
+//go:embed build-dockerfile.tpl
+var dockerfileTemplate string
 
 var t *template.Template
 
@@ -69,6 +73,10 @@ func init() {
 
 	if _, err := t.Parse(nixConf); err != nil {
 		panic(fmt.Errorf("failed to parse nix conf: %w", err))
+	}
+
+	if _, err := t.Parse(dockerfileTemplate); err != nil {
+		panic(fmt.Errorf("failed to parse nixy's build dockerfile template: %w", err))
 	}
 }
 
@@ -139,8 +147,9 @@ func RenderShellHook(params ShellHookParams) ([]byte, error) {
 }
 
 type BuildHookParams struct {
-	ProjectDir  string
+	WorkDir     string
 	BuildTarget string
+	OutputDir   string
 	CopyPaths   []string
 	Command     string
 }
@@ -158,6 +167,16 @@ func RenderNixConf() ([]byte, error) {
 	b := new(bytes.Buffer)
 	if err := t.ExecuteTemplate(b, "nix.conf", nil); err != nil {
 		return nil, fmt.Errorf("failed to render nix.conf: %w", err)
+	}
+
+	return b.Bytes(), nil
+}
+
+func RenderDockerfile() ([]byte, error) {
+	b := new(bytes.Buffer)
+
+	if err := t.ExecuteTemplate(b, "build-dockerfile", nil); err != nil {
+		return nil, errors.New("failed to render build dockerfile").Wrap(err)
 	}
 
 	return b.Bytes(), nil

@@ -1,7 +1,8 @@
 {{- define "build-hook" }}
 
-{{- $projectDir := .ProjectDir }}
-{{- $buildTarget := .BuildTarget }}
+{{- $projectDir := .WorkDir -}}
+{{- $buildTarget := .BuildTarget -}}
+{{- $outputDir := .OutputDir }}
 
 set -e
 
@@ -20,7 +21,7 @@ mkdir -p $(dirname {{$p}})
 cp -r {{$projectDir}}/{{$p}} ./$(dirname {{$p}})
 {{- end }}
 
-dir="{{$projectDir}}/.dist/{{$buildTarget}}"
+dir="{{$outputDir}}"
 mkdir -p $dir
 
 nix build .#{{$buildTarget}} --no-link -o $dir/app

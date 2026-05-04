@@ -1,3 +1,4 @@
+{{- define "build-dockerfile" -}}
 FROM debian:bookworm-slim AS runtime
 COPY .nixy/dist/nix /nix
 
@@ -5,8 +6,15 @@ COPY .nixy/dist/nix /nix
 RUN --mount=type=bind,source=.nixy/dist/app-store-path,target=/tmp/app-store-path \
   ln -s "$(cat /tmp/app-store-path)" /app
 
+{{- /* COPY .nixy/dist/app-store-path /tmp/nixy-app-store-path */}}
+{{- /* RUN ln -s "$(cat /tmp/nixy-app-store-path)" /app \ */}}
+{{- /*     && rm -f /tmp/nixy-app-store-path */}}
+
+{{- /* RUN ls -al /app/bin */}}
+
 FROM gcr.io/distroless/static-debian12
 COPY --from=runtime /nix /nix
 COPY --from=runtime /app /app
 ENV PATH="/app/bin:${PATH}"
-CMD ["go-app"]
+CMD ["<binary-name>"]
+{{- end }}
