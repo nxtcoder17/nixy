@@ -3,11 +3,13 @@ package nixy
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -532,7 +534,7 @@ func InitNixyFile(parent context.Context, dest string) error {
 		return err
 	}
 
-	runtimePaths, err := NewRuntimePaths(ctx.NixyProfile)
+	runtimePaths, err := NewRuntimePaths(ctx.NixyProfile, dir)
 	if err != nil {
 		return err
 	}
@@ -548,4 +550,226 @@ func InitNixyFile(parent context.Context, dest string) error {
 		},
 	}
 	return n.SyncToDisk(dest)
+}
+
+func InitWorkspace(parent context.Context) error {
+	changes, err := workspaceInitChanges(parent)
+	if err != nil {
+		return err
+	}
+	if len(changes) == 0 {
+		fmt.Println("nixy workspace already initialized")
+		return nil
+	}
+
+	fmt.Println("nixy init will make the following changes:")
+	for _, change := range changes {
+		fmt.Printf("- %s %s\n", change.Action, change.Path)
+		for _, note := range change.Notes {
+			fmt.Printf("  - %s\n", note)
+		}
+	}
+	fmt.Println("\nNixy will also prepare runtime directories under $XDG_DATA_HOME/nixy.")
+
+	if !confirmInitWorkspace("Proceed with nixy init?") {
+		return nil
+	}
+
+	if _, err := initRuntimePaths(parent); err != nil {
+		return err
+	}
+
+	if err := initNixyYAML(parent); err != nil {
+		return err
+	}
+
+	if err := initNixyLocalYAML("nixy.local.yml"); err != nil {
+		return err
+	}
+
+	return ensureGitignoreEntries(".gitignore", []string{".nixy/", "nixy.local.yml"})
+}
+
+type workspaceInitChange struct {
+	Action string
+	Path   string
+	Notes  []string
+}
+
+var confirmInitWorkspace = askUser
+
+func workspaceInitChanges(parent context.Context) ([]workspaceInitChange, error) {
+	changes := []workspaceInitChange{}
+	runtimePaths, err := initRuntimePathsPreview(parent)
+	if err != nil {
+		return nil, err
+	}
+	if missing, err := pathMissing(runtimePaths.WorkspaceNixyDir); err != nil {
+		return nil, err
+	} else if missing {
+		changes = append(changes, workspaceInitChange{
+			Action: "create",
+			Path:   ".nixy/",
+			Notes: []string{
+				"stores nixy's generated configuration files",
+				"always gitignored",
+			},
+		})
+	}
+
+	if missing, err := pathMissing("nixy.yml"); err != nil {
+		return nil, err
+	} else if missing {
+		changes = append(changes, workspaceInitChange{
+			Action: "create",
+			Path:   "nixy.yml",
+			Notes:  []string{"prepares the shared project development environment"},
+		})
+	}
+
+	if missing, err := pathMissing("nixy.local.yml"); err != nil {
+		return nil, err
+	} else if missing {
+		changes = append(changes, workspaceInitChange{
+			Action: "create",
+			Path:   "nixy.local.yml",
+			Notes: []string{
+				"prepares the developer's personal tools that accompany `nixy.yml`",
+				"always gitignored",
+			},
+		})
+	}
+
+	gitignoreMissing, err := pathMissing(".gitignore")
+	if err != nil {
+		return nil, err
+	}
+	if gitignoreMissing {
+		changes = append(changes, workspaceInitChange{
+			Action: "create",
+			Path:   ".gitignore",
+			Notes:  []string{"ignores `.nixy/` and `nixy.local.yml`"},
+		})
+		return changes, nil
+	}
+
+	missingEntries, err := missingGitignoreEntries(".gitignore", []string{".nixy/", "nixy.local.yml"})
+	if err != nil {
+		return nil, err
+	}
+	if len(missingEntries) > 0 {
+		changes = append(changes, workspaceInitChange{
+			Action: "update",
+			Path:   ".gitignore",
+			Notes:  []string{"ignores `.nixy/` and `nixy.local.yml`"},
+		})
+	}
+
+	return changes, nil
+}
+
+func initRuntimePathsPreview(parent context.Context) (*RuntimePaths, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	ctx, err := NewContext(parent, dir)
+	if err != nil {
+		return nil, err
+	}
+	return runtimePaths(ctx.NixyProfile, dir), nil
+}
+
+func initRuntimePaths(parent context.Context) (*RuntimePaths, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	ctx, err := NewContext(parent, dir)
+	if err != nil {
+		return nil, err
+	}
+	return NewRuntimePaths(ctx.NixyProfile, dir)
+}
+
+func pathMissing(path string) (bool, error) {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
+func initNixyYAML(parent context.Context) error {
+	if _, err := os.Stat("nixy.yml"); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return InitNixyFile(parent, "nixy.yml")
+		}
+		return err
+	}
+	return nil
+}
+
+func initNixyLocalYAML(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+
+		localConfig := []byte(`# Machine-local nixy config. This file is gitignored.
+# Use it for personal tools, editor setup, host mounts, and local env vars.
+
+packages: []
+mounts: []
+env: {}
+`)
+		return os.WriteFile(path, localConfig, 0o644)
+	}
+	return nil
+}
+
+func ensureGitignoreEntries(path string, entries []string) error {
+	content, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	toAppend := missingGitignoreEntriesFromContent(string(content), entries)
+	if len(toAppend) == 0 {
+		return nil
+	}
+
+	output := string(content)
+	if output != "" && !strings.HasSuffix(output, "\n") {
+		output += "\n"
+	}
+	output += strings.Join(toAppend, "\n") + "\n"
+
+	return os.WriteFile(path, []byte(output), 0o644)
+}
+
+func missingGitignoreEntries(path string, entries []string) ([]string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return missingGitignoreEntriesFromContent(string(content), entries), nil
+}
+
+func missingGitignoreEntriesFromContent(content string, entries []string) []string {
+	lines := strings.Split(content, "\n")
+	existing := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		existing[strings.TrimSpace(line)] = struct{}{}
+	}
+
+	missing := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if _, ok := existing[entry]; !ok {
+			missing = append(missing, entry)
+		}
+	}
+	return missing
 }

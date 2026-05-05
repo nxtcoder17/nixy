@@ -1,6 +1,7 @@
 tasks:
   build:watch:
     watch:
+      enabled: true
       extensions:
         - .go
         - .tpl

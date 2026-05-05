@@ -16,6 +16,14 @@ nixy init
 nixy shell
 ```
 
+`nixy init` creates the project config and local workspace scaffold:
+
+- `nixy.yml` - shared project config
+- `nixy.local.yml` - machine-local config for personal tools, mounts, and env vars
+- `.gitignore` entries for `.nixy/` and `nixy.local.yml`
+
+Before writing, `nixy init` shows the project files and runtime directories it will create or update, then asks for confirmation.
+
 ## Auto Jump into nixy shell
 
 Automatically enter the nixy shell when you navigate to a directory with a `nixy.yml` file.

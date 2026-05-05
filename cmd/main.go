@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -46,14 +45,7 @@ func main() {
 				Name:    "init",
 				Suggest: true,
 				Action: func(ctx context.Context, _ *cli.Command) error {
-					if _, err := os.Stat("nixy.yml"); err != nil {
-						if errors.Is(err, fs.ErrNotExist) {
-							return nixy.InitNixyFile(ctx, "nixy.yml")
-						}
-						return err
-					}
-
-					return nil
+					return nixy.InitWorkspace(ctx)
 				},
 			},
 			{
