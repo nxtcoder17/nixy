@@ -81,14 +81,10 @@ func (nixy *NixyWrapper) dockerShell(ctx *Context, command string, args ...strin
 		)
 	}
 
-	mounts := nixy.Mounts
-	if ctx.NixyUseProfile {
-		mounts = append(mounts, nixy.profileNixy.Mounts...)
-	}
+	mounts := nixy.shellMounts(ctx)
 
 	nixyShellEnvExpander := func(key string) string {
-		slog.Info("nixy profile", "env", nixy.profileNixy.Env)
-		if v, ok := nixy.profileNixy.Env[key]; ok {
+		if v, ok := nixy.shellEnvVars(ctx)[key]; ok {
 			return os.ExpandEnv(v)
 		}
 

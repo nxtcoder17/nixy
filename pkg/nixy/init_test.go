@@ -43,7 +43,7 @@ func TestInitWorkspaceCreatesLocalConfigAndGitignoreEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(localConfig), "packages: []") {
+	if !strings.Contains(string(localConfig), "packages: []") || !strings.Contains(string(localConfig), "nixpkgs: {}") {
 		t.Fatalf("expected nixy.local.yml template, got:\n%s", localConfig)
 	}
 

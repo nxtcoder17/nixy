@@ -39,7 +39,7 @@ func GetGitRootForWorkspace(ctx context.Context, dir string) (string, bool) {
 	return gitRoot, true
 }
 
-func (nixy *NixyWrapper) PrepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
+func (nixy *NixyWrapper) prepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {
 	switch ctx.NixyMode {
 	case LocalMode:
 		return nixy.localShell(ctx, command, args...)
@@ -94,9 +94,8 @@ func (e *executorEnvVars) toMap(ctx *Context) map[string]string {
 		"XDG_CACHE_HOME":   e.XDGCacheHome,
 		"XDG_DATA_HOME":    e.XDGDataHome,
 
-		"NIXY_EXECUTOR":    string(ctx.NixyMode),
-		"NIXY_PROFILE":     ctx.NixyProfile,
-		"NIXY_USE_PROFILE": fmt.Sprintf("%v", ctx.NixyUseProfile),
+		"NIXY_EXECUTOR": string(ctx.NixyMode),
+		"NIXY_PROFILE":  ctx.NixyProfile,
 
 		"NIXY_SHELL":               "true",
 		"NIXY_WORKSPACE_DIR":       e.NixyWorkspaceDir,

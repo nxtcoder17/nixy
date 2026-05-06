@@ -10,11 +10,10 @@ import (
 type Context struct {
 	context.Context
 
-	NixyProfile    string
-	NixyMode       Mode
-	NixyUseProfile bool
-	NixyBinPath    string
-	InNixyShell    bool
+	NixyProfile string
+	NixyMode    Mode
+	NixyBinPath string
+	InNixyShell bool
 
 	PWD string
 
@@ -46,11 +45,6 @@ func NewContext(parent context.Context, workspaceDir string) (*Context, error) {
 		ctx.NixyMode = Mode(v)
 	} else {
 		ctx.NixyMode = LocalMode
-	}
-
-	if v, ok := os.LookupEnv("NIXY_USE_PROFILE"); ok {
-		v = strings.TrimSpace(v)
-		ctx.NixyUseProfile = v == "1" || strings.EqualFold(v, "true")
 	}
 
 	var err error

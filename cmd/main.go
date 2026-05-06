@@ -166,7 +166,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:  "dockerfile",
-						Usage: "generate a Dockerfile for the selected build target",
+						Usage: "generate a Dockerfile for the selected build target, that consumes the created build artifact",
 					},
 				},
 				Action: func(ctx context.Context, c *cli.Command) error {
@@ -174,14 +174,15 @@ func main() {
 					if err != nil {
 						return err
 					}
-					target := c.Args().First()
 
-					if err := n.Build(n.Context, target); err != nil {
-						return err
-					}
+					for _, target := range c.Args().Slice() {
+						if err := n.Build(n.Context, target); err != nil {
+							return err
+						}
 
-					if c.Bool("dockerfile") {
-						return writeDockerfile(n.Context.PWD, n.Builds[target])
+						if c.Bool("dockerfile") {
+							return writeDockerfile(n.Context.PWD, n.Builds[target])
+						}
 					}
 
 					return nil
@@ -196,7 +197,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:  "dockerfile",
-						Usage: "generate a Dockerfile for the selected build target",
+						Usage: "generate a Dockerfile for the selected build target, that consumes the created build artifact",
 					},
 				},
 				Action: func(ctx context.Context, c *cli.Command) error {
@@ -204,14 +205,15 @@ func main() {
 					if err != nil {
 						return err
 					}
-					target := c.Args().First()
 
-					if err := n.Build(ctx, target); err != nil {
-						return err
-					}
+					for _, target := range c.Args().Slice() {
+						if err := n.Build(ctx, target); err != nil {
+							return err
+						}
 
-					if c.Bool("dockerfile") {
-						return writeDockerfile(n.PWD, n.Builds[target])
+						if c.Bool("dockerfile") {
+							return writeDockerfile(n.PWD, n.Builds[target])
+						}
 					}
 
 					return nil
@@ -314,7 +316,7 @@ func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.NixyWrapper, e
 		dir = filepath.Dir(dir)
 	}
 
-	return nil, fmt.Errorf("failed to locate your nearest Nixyfile")
+	return nil, errors.New("failed to locate your nearest Nixyfile")
 }
 
 func writeDockerfile(projectDir string, build nixy.Build) error {

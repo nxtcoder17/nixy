@@ -8,7 +8,10 @@ tasks:
     env:
       CGO_ENABLED: 0
     cmd:
-      - run build version="$(echo \"dev built at $(date '+%X on %b %d, %4Y')\")"
+      - run: build
+        env:
+          version:
+            sh: echo "dev built at $(date '+%X on %b %d, %4Y')"
 
   build:
     env:
@@ -27,7 +30,7 @@ tasks:
         required: true
     cmd:
       - go build -v -o $binpath-$GOOS-$GOARCH -ldflags="-s -w -X 'main.Version=$version'" -tags urfave_cli_no_docs ./cmd/
-      - echo "Build Successful ✅"
+      - echo "Build Successful ✅ $version"
 
   build:all:
     parallel: true
@@ -39,14 +42,17 @@ tasks:
         env:
           GOOS: linux
           GOARCH: amd64
+
       - run: build
         env:
           GOOS: linux
           GOARCH: arm64
+
       - run: build
         env:
           GOOS: darwin
           GOARCH: amd64
+
       - run: build
         env:
           GOOS: darwin

@@ -10,9 +10,6 @@ import (
 	"text/template"
 )
 
-//go:embed profile-nixy.yml.tpl
-var profileNixyYamlContent string
-
 //go:embed workspace-flake.nix.tpl
 var wsFlakeContent string
 
@@ -56,9 +53,6 @@ func init() {
 		},
 	})
 
-	if _, err := t.Parse(profileNixyYamlContent); err != nil {
-		panic(fmt.Errorf("failed to parse profile nixy.yml: %w", err))
-	}
 	if _, err := t.Parse(wsFlakeContent); err != nil {
 		panic(fmt.Errorf("failed to parse workspace flake.nix: %w", err))
 	}
@@ -115,19 +109,6 @@ func RenderWorkspaceFlake(values *WorkspaceFlakeParams) ([]byte, error) {
 	b := new(bytes.Buffer)
 	if err := t.ExecuteTemplate(b, "workspace-flake", values); err != nil {
 		return nil, err
-	}
-
-	return b.Bytes(), nil
-}
-
-type ProfileNixyYAMLParams struct {
-	NixPkgsCommit string
-}
-
-func RenderProfileNixyYAML(values ProfileNixyYAMLParams) ([]byte, error) {
-	b := new(bytes.Buffer)
-	if err := t.ExecuteTemplate(b, "profile-nixy.yml", values); err != nil {
-		return nil, fmt.Errorf("failed to render profile's nixy.yml: %w", err)
 	}
 
 	return b.Bytes(), nil

@@ -1,5 +1,6 @@
 nixpkgs:
   default: 050e09e091117c3d7328c7b2b7b577492c43c134
+
 packages:
   - go
   - fish
@@ -8,6 +9,7 @@ packages:
       linux/amd64:
         url: "https://github.com/nxtcoder17/Runfile/releases/download/v1.6.0/run-linux-amd64"
         sha256: sha256-HedtSRV7qrycROtRcp4GJOrp1+T6s1k3jU/v/h0y/7c=
+
 builds:
   go-app-docker:
     dir: ./example/go-app-docker

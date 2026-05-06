@@ -40,8 +40,9 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 	}
 
 	nixy.executorArgs.EnvVars.NixyBuildScript = buildScript
+	nixy.useLocalNixy = false
 
-	cmd, err := nixy.nixShellExec(ctx, "echo build successfull")
+	cmd, err := nixy.nixShellExec(ctx, "echo build successfull", nixShellExecOptions{IncludeLocalConfig: false})
 	if err != nil {
 		return err
 	}

@@ -15,14 +15,19 @@ import (
 
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 	"golang.org/x/term"
+	"gopkg.in/yaml.v3"
 )
 
-// Profile represents a user profile configuration (only used when NIXY_USE_PROFILE=true)
+// Profile represents profile metadata and runtime state.
 type Profile struct {
-	Name                string
-	NixPkgsCommitHash   string `json:"nixpkgs,omitempty"`
-	ProfilePath         string // ~/.local/share/nixy/profiles/<name>
-	ProfileNixyYAMLPath string
+	Name              string `json:"name"`
+	NixPkgsCommitHash string `json:"nixpkgs,omitempty"`
+	ProfilePath       string `json:"profilePath,omitempty"` // ~/.local/share/nixy/profiles/<name>
+}
+
+type profileMetadata struct {
+	Name              string `yaml:"name,omitempty"`
+	NixPkgsCommitHash string `yaml:"nixpkgs"`
 }
 
 var (
@@ -33,12 +38,37 @@ var (
 
 // GetProfile loads an existing profile from disk
 func GetProfile(_ *Context, name string) (*Profile, error) {
-	profileJSONPath := filepath.Join(XDGDataDir(), "profiles", name, "profile.json")
+	profilePath := filepath.Join(XDGDataDir(), "profiles", name)
+	profileYAMLPath := filepath.Join(profilePath, "profile.yaml")
 
+	if exists(profileYAMLPath) {
+		b, err := os.ReadFile(profileYAMLPath)
+		if err != nil {
+			return nil, err
+		}
+
+		var metadata profileMetadata
+		if err := yaml.Unmarshal(b, &metadata); err != nil {
+			var nested struct {
+				NixPkgs NixPkgsMap `yaml:"nixpkgs"`
+			}
+			if nestedErr := yaml.Unmarshal(b, &nested); nestedErr != nil {
+				return nil, err
+			}
+			metadata.NixPkgsCommitHash = nested.NixPkgs["default"]
+		}
+		p := Profile{
+			Name:              name,
+			NixPkgsCommitHash: metadata.NixPkgsCommitHash,
+			ProfilePath:       profilePath,
+		}
+		return &p, nil
+	}
+
+	profileJSONPath := filepath.Join(profilePath, "profile.json")
 	if !exists(profileJSONPath) {
 		return nil, fmt.Errorf("profile path does not exist")
 	}
-
 	b, err := os.ReadFile(profileJSONPath)
 	if err != nil {
 		return nil, err
@@ -49,11 +79,17 @@ func GetProfile(_ *Context, name string) (*Profile, error) {
 	if err := json.Unmarshal(b, &p); err != nil {
 		return nil, err
 	}
+	p.Name = name
+	p.ProfilePath = profilePath
+
+	if err := p.Save(); err != nil {
+		return nil, err
+	}
 
 	return &p, nil
 }
 
-// NewProfile creates a new profile instance (only used when NIXY_USE_PROFILE=true)
+// NewProfile creates a new profile metadata instance.
 func NewProfile(ctx *Context, name string, runtimePaths *RuntimePaths) (*Profile, error) {
 	if v, err := GetProfile(ctx, name); err == nil {
 		return v, nil
@@ -71,26 +107,16 @@ func NewProfile(ctx *Context, name string, runtimePaths *RuntimePaths) (*Profile
 	}
 
 	p := Profile{
-		Name:                name,
-		ProfilePath:         profilePath,
-		NixPkgsCommitHash:   nixPkgsHash,
-		ProfileNixyYAMLPath: filepath.Join(profilePath, "nixy.yml"),
+		Name:              name,
+		ProfilePath:       profilePath,
+		NixPkgsCommitHash: nixPkgsHash,
 	}
 
 	if err := p.Save(); err != nil {
-		return nil, fmt.Errorf("failed to save profile into a profile.json: %w", err)
+		return nil, fmt.Errorf("failed to save profile metadata: %w", err)
 	}
 
-	b, err := templates.RenderProfileNixyYAML(templates.ProfileNixyYAMLParams{NixPkgsCommit: nixPkgsHash})
-	if err != nil {
-		return nil, err
-	}
-
-	if err := os.WriteFile(p.ProfileNixyYAMLPath, b, 0o644); err != nil {
-		return nil, fmt.Errorf("failed to create profile nixy.yml: %w", err)
-	}
-
-	b, err = templates.RenderNixConf()
+	b, err := templates.RenderNixConf()
 	if err != nil {
 		return nil, err
 	}
@@ -102,14 +128,17 @@ func NewProfile(ctx *Context, name string, runtimePaths *RuntimePaths) (*Profile
 	return &p, nil
 }
 
-// Save persists the profile to disk as JSON
+// Save persists the profile to disk as YAML metadata.
 func (p *Profile) Save() error {
-	b, err := json.Marshal(p)
+	b, err := yaml.Marshal(profileMetadata{
+		Name:              p.Name,
+		NixPkgsCommitHash: p.NixPkgsCommitHash,
+	})
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(p.ProfilePath, "profile.json"), b, 0o644)
+	return os.WriteFile(filepath.Join(p.ProfilePath, "profile.yaml"), b, 0o644)
 }
 
 // ProfileList returns all available profiles
@@ -146,7 +175,7 @@ func ProfileCreate(ctx context.Context, name string) error {
 	return err
 }
 
-// ProfileEdit opens the profile's nixy.yml in the user's editor
+// ProfileEdit opens the profile metadata in the user's editor
 func ProfileEdit(ctx context.Context, name string) error {
 	nixyCtx, err := NewContext(ctx, "")
 	if err != nil {
@@ -167,7 +196,7 @@ func ProfileEdit(ctx context.Context, name string) error {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, os.Getenv("EDITOR"), "nixy.yml")
+	cmd := exec.CommandContext(ctx, os.Getenv("EDITOR"), "profile.yaml")
 	cmd.Dir = profile.ProfilePath
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

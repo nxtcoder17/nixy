@@ -28,6 +28,8 @@ func (m Mode) String() string {
 	return string(m)
 }
 
+// NixyMount is for mounting a host file system path to a path in nixy shell
+// It is effective only in non-local modes
 type NixyMount struct {
 	Source      string `yaml:"source"`
 	Destination string `yaml:"dest"`
@@ -60,6 +62,7 @@ type Nixy struct {
 
 	Env map[string]string `yaml:"env,omitempty"`
 
+	// OnShellEnter runs at the final step in nixy shell lifecycle
 	OnShellEnter string `yaml:"onShellEnter,omitempty"`
 
 	// OnShellExit is not used as of now, will try to use it in future
@@ -67,7 +70,7 @@ type Nixy struct {
 
 	Builds map[string]Build `yaml:"builds,omitempty"`
 
-	// Mount is applicable only on bubblewrap and docker modes
+	// Mounts are only for non-local execution modes
 	Mounts []NixyMount `yaml:"mounts,omitempty"`
 
 	// AUTO FILLED
@@ -89,13 +92,14 @@ func (n *Nixy) debug() {
 type NixyWrapper struct {
 	Context *Context
 
-	hasHashChanged bool
-	executorArgs   *ExecutorArgs `yaml:"-"`
-	sync.Mutex     `yaml:"-"`
-	Logger         *slog.Logger  `yaml:"-"`
-	runtimePaths   *RuntimePaths `yaml:"-"` // Always set (workspace infrastructure)
-	profile        *Profile      `yaml:"-"` // Only set when NIXY_USE_PROFILE=true
-	profileNixy    *Nixy         `yaml:"-"` // Only set when NIXY_USE_PROFILE=true
+	executorArgs *ExecutorArgs `yaml:"-"`
+	sync.Mutex   `yaml:"-"`
+	Logger       *slog.Logger  `yaml:"-"`
+	runtimePaths *RuntimePaths `yaml:"-"` // Always set (workspace infrastructure)
+	localNixy    *Nixy         `yaml:"-"` // Optional project-local personal shell config
+	projectHash  string        `yaml:"-"`
+	localHash    string        `yaml:"-"`
+	useLocalNixy bool          `yaml:"-"`
 
 	PWD string
 
@@ -169,7 +173,7 @@ func LoadInNixyShell(parent context.Context) (*InShellNixy, error) {
 	return &nixy, nil
 }
 
-func parseAndSyncNixyFile(ctx context.Context, file string) (*Nixy, error) {
+func parseAndSyncNixyFile(ctx context.Context, file string, requireDefaultNixpkgs bool) (*Nixy, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read nixy file (%s): %w", file, err)
@@ -190,7 +194,7 @@ func parseAndSyncNixyFile(ctx context.Context, file string) (*Nixy, error) {
 	// Store the raw node for later sync
 	nixyCfg.rawNode = &rootNode
 
-	if _, ok := nixyCfg.NixPkgs["default"]; !ok {
+	if requireDefaultNixpkgs && nixyCfg.NixPkgs["default"] == "" {
 		return nil, fmt.Errorf("nixy.yml must have a nixpkgs.default key, containing a nixpkgs hash")
 	}
 
@@ -256,7 +260,7 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 		return nil, fmt.Errorf("failed to read current working directory: %w", err)
 	}
 
-	nc, err := parseAndSyncNixyFile(parent, f)
+	nc, err := parseAndSyncNixyFile(parent, f, true)
 	if err != nil {
 		return nil, err
 	}
@@ -272,44 +276,34 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 		return nil, err
 	}
 
-	hasHashChanged, err := compareAndSaveHash(filepath.Join(runtimePaths.WorkspaceNixyDir, configHashFileName), nc.sha256Sum)
-	if err != nil {
-		return nil, err
-	}
-	if !hasHashChanged && !workspaceGeneratedFilesExist(runtimePaths.WorkspaceNixyDir) {
-		hasHashChanged = true
-	}
-
 	nixy := NixyWrapper{
-		Context:        ctx,
-		hasHashChanged: hasHashChanged,
-		runtimePaths:   runtimePaths,
-		Logger:         slog.Default(),
-		PWD:            dir,
-		Nixy:           nc,
+		Context:      ctx,
+		runtimePaths: runtimePaths,
+		Logger:       slog.Default(),
+		PWD:          dir,
+		Nixy:         nc,
 	}
 
-	// Only load profile configuration when NIXY_USE_PROFILE is enabled
-	if ctx.NixyUseProfile {
-		profile, err := NewProfile(ctx, ctx.NixyProfile, runtimePaths)
-		if err != nil {
-			return nil, err
+	localHash := ""
+	localFile := filepath.Join(ctx.PWD, "nixy.local.yml")
+	if !exists(localFile) {
+		if v, ok := os.LookupEnv("NIXY_PRELOAD"); ok {
+			localFile = os.ExpandEnv(v)
 		}
-		nixy.profile = profile
-
-		nc, err := parseAndSyncNixyFile(ctx, profile.ProfileNixyYAMLPath)
-		if err != nil {
-			return nil, err
-		}
-		hasChanged, err := compareAndSaveHash(filepath.Join(profilePath(ctx.NixyProfile), configHashFileName), nc.sha256Sum)
-		if err != nil {
-			return nil, err
-		}
-
-		nixy.profileNixy = nc
-		// If either the workspace or profile nixy.yml has changed, we need to regenerate
-		nixy.hasHashChanged = nixy.hasHashChanged || hasChanged
 	}
+
+	if exists(localFile) {
+		localNixy, err := parseAndSyncNixyFile(parent, localFile, false)
+		if err != nil {
+			return nil, err
+		}
+		nixy.localNixy = localNixy
+		localHash = localNixy.sha256Sum
+		nixy.useLocalNixy = true
+	}
+
+	nixy.projectHash = nc.sha256Sum
+	nixy.localHash = localHash
 
 	switch ctx.NixyMode {
 	case BubbleWrapMode:
@@ -336,7 +330,54 @@ func LoadFromFile(parent context.Context, f string) (*NixyWrapper, error) {
 	return &nixy, nil
 }
 
-func compareAndSaveHash(saveToFile string, sha256Sum string) (bool, error) {
+func combinedConfigHash(hashes ...string) string {
+	nonEmpty := make([]string, 0, len(hashes))
+	for _, hash := range hashes {
+		if hash != "" {
+			nonEmpty = append(nonEmpty, hash)
+		}
+	}
+
+	if len(nonEmpty) == 0 {
+		return ""
+	}
+	if len(nonEmpty) == 1 {
+		return nonEmpty[0]
+	}
+
+	hasher := sha256.New()
+	for _, hash := range nonEmpty {
+		hasher.Write([]byte(hash))
+		hasher.Write([]byte{0})
+	}
+	return fmt.Sprintf("%x", hasher.Sum(nil))[:7]
+}
+
+type configHashState struct {
+	Hash       string
+	HasChanged bool
+}
+
+func resolveConfigHashState(saveToFile, generatedDir, projectHash, localHash string) (configHashState, error) {
+	configHash := combinedConfigHash(projectHash, localHash)
+	hasHashChanged, err := hasSavedHashChanged(saveToFile, configHash)
+	if err != nil {
+		return configHashState{}, err
+	}
+
+	if hasHashChanged {
+		slog.Debug("nixy config hash changed", "to", configHash)
+		if err := os.WriteFile(saveToFile, []byte(configHash), 0o644); err != nil {
+			return configHashState{}, fmt.Errorf("failed to write sha256 hash (path: %s): %w", saveToFile, err)
+		}
+	} else if !workspaceGeneratedFilesExist(generatedDir) {
+		hasHashChanged = true
+	}
+
+	return configHashState{Hash: configHash, HasChanged: hasHashChanged}, nil
+}
+
+func hasSavedHashChanged(saveToFile string, sha256Sum string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(saveToFile), 0o755); err != nil {
 		return false, fmt.Errorf("failed to create dir %s: %s", filepath.Dir(saveToFile), err)
 	}
@@ -350,13 +391,6 @@ func compareAndSaveHash(saveToFile string, sha256Sum string) (bool, error) {
 
 		slog.Debug("comparing nixy.yml hash", "nixy-file", saveToFile, "file.hash", string(hash), "nixy.hash", sha256Sum)
 		hasHashChanged = string(hash) != sha256Sum
-	}
-
-	if hasHashChanged {
-		slog.Debug("nixy.yml hash changed", "to", sha256Sum)
-		if err := os.WriteFile(saveToFile, []byte(sha256Sum), 0o644); err != nil {
-			return false, fmt.Errorf("failed to write sha256 hash (path: %s): %w", saveToFile, err)
-		}
 	}
 
 	return hasHashChanged, nil
@@ -525,11 +559,7 @@ func updateSHA256InNode(root *yaml.Node, pkgIndex int, osArch, hash string) erro
 }
 
 func InitNixyFile(parent context.Context, dest string) error {
-	dir, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	ctx, err := NewContext(parent, dir)
+	ctx, dir, err := initContextFromCWD(parent)
 	if err != nil {
 		return err
 	}
@@ -668,12 +698,20 @@ func workspaceInitChanges(parent context.Context) ([]workspaceInitChange, error)
 	return changes, nil
 }
 
-func initRuntimePathsPreview(parent context.Context) (*RuntimePaths, error) {
+func initContextFromCWD(parent context.Context) (*Context, string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	ctx, err := NewContext(parent, dir)
+	if err != nil {
+		return nil, "", err
+	}
+	return ctx, dir, nil
+}
+
+func initRuntimePathsPreview(parent context.Context) (*RuntimePaths, error) {
+	ctx, dir, err := initContextFromCWD(parent)
 	if err != nil {
 		return nil, err
 	}
@@ -681,11 +719,7 @@ func initRuntimePathsPreview(parent context.Context) (*RuntimePaths, error) {
 }
 
 func initRuntimePaths(parent context.Context) (*RuntimePaths, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	ctx, err := NewContext(parent, dir)
+	ctx, dir, err := initContextFromCWD(parent)
 	if err != nil {
 		return nil, err
 	}
@@ -722,6 +756,7 @@ func initNixyLocalYAML(path string) error {
 # Use it for personal tools, editor setup, host mounts, and local env vars.
 
 packages: []
+nixpkgs: {}
 mounts: []
 env: {}
 `)

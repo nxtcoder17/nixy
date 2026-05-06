@@ -7,7 +7,7 @@ import (
 )
 
 // RuntimePaths represents the filesystem paths needed for nixy runtime execution.
-// These paths are always created and used regardless of NIXY_USE_PROFILE setting.
+// These paths are always created and used for the selected profile namespace.
 type RuntimePaths struct {
 	Name             string // profile name (used for directory organization)
 	BasePath         string // ~/.local/share/nixy/profiles/<name>
@@ -18,7 +18,7 @@ type RuntimePaths struct {
 }
 
 // NewRuntimePaths creates and initializes the runtime paths for a given profile name.
-// This is always called regardless of NIXY_USE_PROFILE setting.
+// This is always called for the selected profile namespace.
 func NewRuntimePaths(name string, workspaceDir ...string) (*RuntimePaths, error) {
 	rp := runtimePaths(name, workspaceDir...)
 	if err := rp.CreateDirs(); err != nil {
