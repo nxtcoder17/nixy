@@ -109,10 +109,7 @@ func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...s
 		)
 	}
 
-	mounts := nixy.Mounts
-	if ctx.NixyUseProfile {
-		mounts = append(mounts, nixy.profileNixy.Mounts...)
-	}
+	mounts := nixy.shellMounts(ctx)
 
 	executorEnv := nixy.executorArgs.EnvVars.toMap(ctx)
 
@@ -128,14 +125,8 @@ func (nixy *NixyWrapper) bubblewrapShell(ctx *Context, command string, args ...s
 				return v
 			}
 
-			if v, ok := nixy.Env[s]; ok {
+			if v, ok := nixy.shellEnvVars(ctx)[s]; ok {
 				return v
-			}
-
-			if nixy.profileNixy != nil {
-				if v, ok := nixy.profileNixy.Env[s]; ok {
-					return v
-				}
 			}
 
 			// Return original $VAR syntax if not found, so errors are visible

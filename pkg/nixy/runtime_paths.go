@@ -7,7 +7,7 @@ import (
 )
 
 // RuntimePaths represents the filesystem paths needed for nixy runtime execution.
-// These paths are always created and used regardless of NIXY_USE_PROFILE setting.
+// These paths are always created and used for the selected profile namespace.
 type RuntimePaths struct {
 	Name             string // profile name (used for directory organization)
 	BasePath         string // ~/.local/share/nixy/profiles/<name>
@@ -18,8 +18,17 @@ type RuntimePaths struct {
 }
 
 // NewRuntimePaths creates and initializes the runtime paths for a given profile name.
-// This is always called regardless of NIXY_USE_PROFILE setting.
+// This is always called for the selected profile namespace.
 func NewRuntimePaths(name string, workspaceDir ...string) (*RuntimePaths, error) {
+	rp := runtimePaths(name, workspaceDir...)
+	if err := rp.CreateDirs(); err != nil {
+		return nil, fmt.Errorf("failed to create runtime directories: %w", err)
+	}
+
+	return rp, nil
+}
+
+func runtimePaths(name string, workspaceDir ...string) *RuntimePaths {
 	basePath := filepath.Join(XDGDataDir(), "profiles", name)
 	nixDir := filepath.Join(basePath, "nix")
 	fakeHomeDir := filepath.Join(basePath, "fake-home")
@@ -28,7 +37,7 @@ func NewRuntimePaths(name string, workspaceDir ...string) (*RuntimePaths, error)
 		workspaceNixyDir = workspaceNixyDirPath(workspaceDir[0])
 	}
 
-	rp := &RuntimePaths{
+	return &RuntimePaths{
 		Name:             name,
 		BasePath:         basePath,
 		WorkspaceNixyDir: workspaceNixyDir,
@@ -36,16 +45,20 @@ func NewRuntimePaths(name string, workspaceDir ...string) (*RuntimePaths, error)
 		NixDir:           nixDir,
 		StaticNixBinPath: filepath.Join(nixDir, "bin", "nix"),
 	}
-
-	if err := rp.CreateDirs(); err != nil {
-		return nil, fmt.Errorf("failed to create runtime directories: %w", err)
-	}
-
-	return rp, nil
 }
 
 // CreateDirs creates all necessary directories for the runtime paths
 func (rp *RuntimePaths) CreateDirs() error {
+	for _, dir := range rp.Dirs() {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (rp *RuntimePaths) Dirs() []string {
 	dirs := []string{
 		rp.BasePath,
 		rp.WorkspaceNixyDir,
@@ -56,14 +69,11 @@ func (rp *RuntimePaths) CreateDirs() error {
 		filepath.Join(rp.FakeHomeDir, ".config", "nix"),
 	}
 
+	result := make([]string, 0, len(dirs))
 	for _, dir := range dirs {
-		if dir == "" {
-			continue
-		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+		if dir != "" {
+			result = append(result, dir)
 		}
 	}
-
-	return nil
+	return result
 }

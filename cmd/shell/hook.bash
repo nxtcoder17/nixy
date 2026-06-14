@@ -1,7 +1,7 @@
 NIXY_LAST_DIR=""
 
 __nixy_debug() {
-  echo "[## NIXY DEBUG] $@"
+  echo "[## NIXY DEBUG] $*"
 }
 
 __nixy_shell_hook() {
@@ -27,8 +27,8 @@ __nixy_shell_hook() {
 
 # Register hook only if not already registered
 case "$PROMPT_COMMAND" in
-  *__nixy_shell_hook*) ;;
-  *)
-    PROMPT_COMMAND="__nixy_shell_hook${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
-    ;;
+*__nixy_shell_hook*) ;;
+*)
+  PROMPT_COMMAND="__nixy_shell_hook${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+  ;;
 esac

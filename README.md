@@ -16,6 +16,15 @@ nixy init
 nixy shell
 ```
 
+`nixy init` creates the project config and local workspace scaffold:
+
+- `nixy.yml` - shared project config
+- `nixy.local.yml` - machine-local config for personal tools, mounts, and env vars
+- `.gitignore` entries for `.nixy/` and `nixy.local.yml`
+
+Before writing, `nixy init` shows the project files and runtime directories it will create or update, then asks for confirmation.
+`nixy.local.yml` is loaded by `nixy shell` only. It may define its own `nixpkgs` entries, but `nixy.yml` takes precedence when keys overlap. `nixy build` uses the shared `nixy.yml` project config.
+
 ## Auto Jump into nixy shell
 
 Automatically enter the nixy shell when you navigate to a directory with a `nixy.yml` file.
@@ -260,7 +269,7 @@ NIXY_EXECUTOR=bubblewrap nixy shell
 
 > [!NOTE]
 > Profiles provide runtime isolation. Different dev shells within the same profile share runtime filesystems like nix-store and fake-home.
-> Profile-level `nixy.yml` config is loaded only when `NIXY_USE_PROFILE=true`.
+> Profile metadata lives in `profile.yaml` and stores values such as the default nixpkgs pin. Profiles do not inject packages, mounts, or env vars into project shells.
 
 Keep separate development profiles:
 ```bash
@@ -318,6 +327,7 @@ Nixy writes generated workspace files to the project-local `.nixy/` directory:
 
 - `.nixy/flake.nix` - generated Nix flake used for the shell/build environment
 - `.nixy/flake.lock` - generated lock file for the workspace flake
+- `.nixy/nixy-merged.yml` - effective config used to generate the current workspace flake
 - `.nixy/shell-enter.sh` - generated script from `onShellEnter`
 - `.nixy/shell-env.sh` - generated environment from `nix print-dev-env`
 - `.nixy/build.<target>.sh` - generated build script for a target (`/` and `:` are replaced with `_`)
@@ -358,7 +368,7 @@ mounts:
 
 ### Profile Commands
 - `nixy profile create <name>` - Create a profile namespace
-- `nixy profile edit [name]` - Edit profile-level config
+- `nixy profile edit [name]` - Edit profile metadata
 - `nixy profile list` - List all profiles
 
 ## Examples
@@ -495,7 +505,6 @@ builds:
 
 - `NIXY_EXECUTOR` - Execution backend (local, local-ignore-env, docker, bubblewrap)
 - `NIXY_PROFILE` - Profile namespace to use
-- `NIXY_USE_PROFILE` - Load profile-level config when set to `true` or `1`
 
 ## Troubleshooting
 
