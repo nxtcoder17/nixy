@@ -3,7 +3,8 @@ module github.com/nxtcoder17/nixy
 go 1.24.4
 
 require (
-	github.com/nxtcoder17/fastlog v0.0.0-20251112144402-5324a708e570
+	github.com/codingconcepts/env v0.0.0-20240618133406-5b0845441187
+	github.com/nxtcoder17/fastlog v0.0.0-20260613184800-b9ad2781f7fd
 	github.com/nxtcoder17/go.errors v0.0.0-20251116060059-d31bd582d4c8
 	github.com/urfave/cli/v3 v3.3.8
 	golang.org/x/term v0.36.0

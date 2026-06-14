@@ -15,6 +15,31 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Nixy struct {
+	NixPkgs   NixPkgsMap           `yaml:"nixpkgs"`
+	Packages  []*NormalizedPackage `yaml:"packages"`
+	Libraries []string             `yaml:"libraries,omitempty"`
+
+	Env map[string]string `yaml:"env,omitempty"`
+
+	// OnShellEnter runs at the final step in nixy shell lifecycle
+	OnShellEnter string `yaml:"onShellEnter,omitempty"`
+
+	// OnShellExit is not used as of now, will try to use it in future
+	OnShellExit string `yaml:"onShellExit,omitempty"`
+
+	Builds map[string]Build `yaml:"builds,omitempty"`
+
+	// Mounts are only for non-local execution modes
+	Mounts []NixyMount `yaml:"mounts,omitempty"`
+
+	// AUTO FILLED
+	sha256Sum string `yaml:"-"`
+
+	// rawNode holds the original yaml.Node tree for comment preservation
+	rawNode *yaml.Node `yaml:"-"`
+}
+
 type Mode string
 
 const (
@@ -55,31 +80,6 @@ func (m NixPkgsMap) DefaultCommit() string {
 	return "default"
 }
 
-type Nixy struct {
-	NixPkgs   NixPkgsMap           `yaml:"nixpkgs"`
-	Packages  []*NormalizedPackage `yaml:"packages"`
-	Libraries []string             `yaml:"libraries,omitempty"`
-
-	Env map[string]string `yaml:"env,omitempty"`
-
-	// OnShellEnter runs at the final step in nixy shell lifecycle
-	OnShellEnter string `yaml:"onShellEnter,omitempty"`
-
-	// OnShellExit is not used as of now, will try to use it in future
-	OnShellExit string `yaml:"onShellExit,omitempty"`
-
-	Builds map[string]Build `yaml:"builds,omitempty"`
-
-	// Mounts are only for non-local execution modes
-	Mounts []NixyMount `yaml:"mounts,omitempty"`
-
-	// AUTO FILLED
-	sha256Sum string `yaml:"-"`
-
-	// rawNode holds the original yaml.Node tree for comment preservation
-	rawNode *yaml.Node `yaml:"-"`
-}
-
 func (n *Nixy) debug() {
 	b, err := yaml.Marshal(n)
 	if err != nil {
@@ -118,32 +118,8 @@ type ExecutorArgs struct {
 	EnvVars executorEnvVars
 }
 
-type Build struct {
-	Packages []*NormalizedPackage `yaml:"packages"`
-	Paths    []string             `yaml:"paths"`
-	Command  string               `yaml:"command"`
-	Dir      string               `yaml:"dir,omitempty"`
-}
-
-func (b Build) ResolvedDir() string {
-	if b.Dir == "" {
-		return "."
-	}
-
-	return filepath.Clean(b.Dir)
-}
-
-func (b Build) BuildDir(projectDir string) string {
-	return filepath.Join(projectDir, b.ResolvedDir())
-}
-
-func (b Build) OutputDir(projectDir string) string {
-	return filepath.Join(b.BuildDir(projectDir), ".nixy", "dist")
-}
-
 type InShellNixy struct {
-	PWD    string `yaml:"-"`
-	Logger *slog.Logger
+	PWD string `yaml:"-"`
 	Nixy
 }
 
@@ -161,9 +137,8 @@ func LoadInNixyShell(parent context.Context) (*InShellNixy, error) {
 	}
 
 	nixy := InShellNixy{
-		Logger: slog.Default(),
-		PWD:    workspaceDir,
-		Nixy:   Nixy{},
+		PWD:  workspaceDir,
+		Nixy: Nixy{},
 	}
 
 	if err := yaml.Unmarshal(b, &nixy.Nixy); err != nil {
