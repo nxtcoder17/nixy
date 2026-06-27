@@ -7,15 +7,16 @@ import (
 	"crypto/sha256"
 	"fmt"
 	yamlAST "github.com/nxtcoder17/nixy/pkg/yaml-ast"
+	"gopkg.in/yaml.v3"
+	"maps"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
-type Nixy struct {
-	NixPkgs   map[string]string    `yaml:"nixpkgs"`
-	Packages  []*NormalizedPackage `yaml:"packages"`
-	Libraries []string             `yaml:"libraries,omitempty"`
+type NixyYAML struct {
+	NixPkgs   map[string]string `yaml:"nixpkgs"`
+	Packages  []*Package        `yaml:"packages"`
+	Libraries []string          `yaml:"libraries,omitempty"`
 
 	Env map[string]string `yaml:"env,omitempty"`
 
@@ -29,13 +30,55 @@ type Nixy struct {
 
 	// Mounts are only for non-local execution modes
 	Mounts []NixyMount `yaml:"mounts,omitempty"`
+
+	sha256Sum string `yaml:"-"`
 }
 
-type NixyWrapper struct {
-	Nixy
+// NixyMount is for mounting a host file system path to a path in nixy shell
+// It is effective only in non-local modes
+type NixyMount struct {
+	Source      string `yaml:"source"`
+	Destination string `yaml:"dest"`
+
+	ReadOnly bool `yaml:"readonly,omitempty"`
+}
+
+type Package struct {
+	*NixPackage
+	*URLPackage
+}
+
+type NixPackage struct {
+	Name   string
+	Commit string
+}
+
+type URLPackage struct {
+	Name        string                      `yaml:"name"`
+	Sources     map[string]PackageURLAndSHA `yaml:"sources"`
+	InstallHook string                      `yaml:"installHook,omitempty"`
+	BinPaths    []string                    `yaml:"binPaths,omitempty"`
+}
+
+type PackageURLAndSHA struct {
+	URL    string `yaml:"url"`
+	SHA256 string `yaml:"sha256"`
+}
+
+type Nixy struct {
+	*NixyYAML
 
 	// AUTO FILLED
 	sha256Sum string `yaml:"-"`
+
+	fsPaths *FSPaths
+
+	Executor
+}
+
+type InNixyShell struct {
+	*NixyYAML
+	fsPaths *FSPaths
 }
 
 func hashNixyFile(appCtx *app.Context, content []byte) string {
@@ -47,7 +90,7 @@ func hashNixyFile(appCtx *app.Context, content []byte) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyWrapper, error) {
+func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyYAML, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, errors.New("failed to read nixy file").Wrap(err).KV("file", file)
@@ -58,13 +101,13 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyWrapper, error
 		return nil, err
 	}
 
-	var nw NixyWrapper
-	if err := parser.Decode(&nw.Nixy); err != nil {
+	var nw NixyYAML
+	if err := parser.Decode(&nw); err != nil {
 		return nil, err
 	}
 
-	if nw.Nixy.NixPkgs["default"] == "" {
-		return nil, errors.New("nixy.yml must have a nixpkgs.default key, containing a nixpkgs hash").KV("nixpkgs-map", nw.Nixy.NixPkgs)
+	if nw.NixPkgs["default"] == "" {
+		return nil, errors.New("nixy.yml must have a nixpkgs.default key, containing a nixpkgs hash").KV("nixpkgs-map", nw.NixPkgs)
 	}
 
 	nw.sha256Sum = hashNixyFile(appCtx, b)
@@ -78,8 +121,7 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyWrapper, error
 
 		// Fetch SHA256 if not provided
 		if pkg.URLPackage != nil {
-			osArch := getOSArch()
-
+			osArch := appCtx.OSArch()
 			v, hasSource := pkg.URLPackage.Sources[osArch]
 			if !hasSource || v.URL == "" {
 				return nil, errors.New("URL package has no source os/arch defined").Wrap(err).KV("name", pkg.URLPackage.Name, "os/arch", osArch)
@@ -96,7 +138,7 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyWrapper, error
 
 			hasPkgUpdates = true
 
-			pkg.URLPackage.Sources[osArch] = URLAndSHA{
+			pkg.URLPackage.Sources[osArch] = PackageURLAndSHA{
 				URL:    v.URL,
 				SHA256: hash,
 			}
@@ -106,7 +148,7 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyWrapper, error
 				{
 					Op:    "add",
 					Path:  fmt.Sprintf("/packages/%d/sources/%s/sha256", i, strings.ReplaceAll(osArch, "/", "~1")),
-					Value: v,
+					Value: hash,
 				},
 			}); err != nil {
 				return nil, errors.New("failed to apply patches").Wrap(err)
@@ -115,7 +157,7 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyWrapper, error
 	}
 
 	if hasPkgUpdates {
-		if err := nw.SyncToDisk(file); err != nil {
+		if err := nw.syncToDisk(file, parser.Root()); err != nil {
 			return nil, err
 		}
 	}
@@ -126,7 +168,7 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyWrapper, error
 // SyncToDisk writes the nixy config to disk.
 // When rawNode is set, it preserves the original YAML structure (comments, ordering).
 // When rawNode is nil, it encodes the struct with deduplication (for new files).
-func (nixy *NixyWrapper) SyncToDisk(file string) error {
+func (n *NixyYAML) syncToDisk(file string, content any) error {
 	if file == "" {
 		return fmt.Errorf("required param `file` not provided")
 	}
@@ -144,88 +186,107 @@ func (nixy *NixyWrapper) SyncToDisk(file string) error {
 	encoder.SetIndent(2)
 	defer encoder.Close()
 
-	// rawNode path: preserves comments and user's structure, skips deduplication
-	if nixy.rawNode != nil {
-		return encoder.Encode(nixy.rawNode)
-	}
-
-	// Struct path (new files): encode with deduplication
-	upkg := make([]*NormalizedPackage, 0, len(nixy.Packages))
-	set := make(map[string]struct{}, len(nixy.Packages))
-
-	for _, pkg := range nixy.Packages {
-		if pkg == nil {
-			continue
-		}
-
-		var key string
-
-		if pkg.NixPackage != nil {
-			key = pkg.NixPackage.Name
-		}
-
-		if pkg.URLPackage != nil {
-			key = pkg.URLPackage.Name
-		}
-
-		if _, ok := set[key]; ok {
-			continue
-		}
-		set[key] = struct{}{}
-		upkg = append(upkg, pkg)
-	}
-
-	nixy.Packages = upkg
-
-	return encoder.Encode(nixy)
+	return encoder.Encode(content)
 }
 
-func LoadFromFile(appCtx *app.Context, f string) (*NixyWrapper, error) {
-	nw, err := parseAndSyncNixyFile(appCtx, f)
+func mergeNixyYAMLs(yamls ...*NixyYAML) *NixyYAML {
+	n := &NixyYAML{}
+
+	for _, y := range yamls {
+		maps.Copy(n.NixPkgs, y.NixPkgs)
+		n.Packages = append(n.Packages, y.Packages...)
+		n.Libraries = append(n.Libraries, y.Libraries...)
+		maps.Copy(n.Env, y.Env)
+		n.OnShellEnter += "\n" + n.OnShellEnter
+		n.OnShellExit += "\n" + n.OnShellExit
+		maps.Copy(n.Builds, y.Builds)
+		n.Mounts = append(n.Mounts, y.Mounts...)
+	}
+
+	return n
+}
+
+func LoadFromFile(appCtx *app.Context, f string) (*Nixy, error) {
+	fsPaths, err := CreateFSPaths(appCtx)
 	if err != nil {
 		return nil, err
 	}
 
-	preloadHash := ""
-	localFile := filepath.Join(appCtx.PWD, "nixy.local.yml")
-	if !exists(localFile) {
+	n, err := func() (*Nixy, error) {
+		projectNixy, err := parseAndSyncNixyFile(appCtx, f)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, ok := projectNixy.NixPkgs["default"]; !ok {
+			return nil, errors.New("nixy.yml must have a nixpkgs.default key, containing a nixpkgs hash")
+		}
+
 		if appCtx.NixyPreload != nil {
-			localFile = os.ExpandEnv(*appCtx.NixyPreload)
+			preloadNixy, err := parseAndSyncNixyFile(appCtx, os.ExpandEnv(*appCtx.NixyPreload))
+			if err != nil {
+				return nil, err
+			}
+
+			return &Nixy{
+				NixyYAML:  mergeNixyYAMLs(preloadNixy, projectNixy),
+				fsPaths:   fsPaths,
+				sha256Sum: preloadNixy.sha256Sum + ";" + projectNixy.sha256Sum,
+				Executor:  nil,
+			}, nil
 		}
+
+		return &Nixy{
+			NixyYAML:  projectNixy,
+			fsPaths:   fsPaths,
+			sha256Sum: projectNixy.sha256Sum,
+			Executor:  nil,
+		}, nil
+	}()
+
+	if err != nil {
+		return nil, err
 	}
 
-	if exists(localFile) {
-		localNixy, err := parseAndSyncNixyFile(appCtx, localFile)
-		if err != nil {
-			return nil, err
-		}
-		preloadHash = localNixy.sha256Sum
+	if err := n.syncToDisk(fsPaths.GeneratedNixyYAMLPath, n.NixyYAML); err != nil {
+		return nil, err
 	}
 
-	nixy.projectHash = nw.sha256Sum
-	nixy.localHash = preloadHash
-
-	switch ctx.NixyMode {
-	case BubbleWrapMode:
-		nixy.executorArgs, err = UseBubbleWrap(ctx, runtimePaths)
-		if err != nil {
-			return nil, err
-		}
-	case DockerMode:
-		nixy.executorArgs, err = UseDocker(ctx, runtimePaths)
-		if err != nil {
-			return nil, err
-		}
-	case LocalMode:
-		nixy.executorArgs, err = UseLocal(ctx, runtimePaths)
-		if err != nil {
-			return nil, err
-		}
+	switch appCtx.NixyMode {
+	case app.BubbleWrapMode:
+		panic("NOT IMPLEMENTED YET")
+	case app.DockerMode:
+		n.Executor = n.NewDockerExecutor(appCtx, fsPaths)
+	case app.LocalMode:
+		n.Executor = n.NewLocalExecutor(appCtx, fsPaths)
 	}
 
-	if _, ok := nixy.NixPkgs["default"]; !ok {
-		return nil, fmt.Errorf("nixy.yml must have a nixpkgs.default key, containing a nixpkgs hash")
+	return n, nil
+}
+
+func LoadInNixyShell(appCtx *app.Context) (*InNixyShell, error) {
+	fsPaths, err := CreateFSPaths(appCtx)
+	if err != nil {
+		return nil, err
 	}
 
-	return &nixy, nil
+	b, err := os.ReadFile(fsPaths.GeneratedNixyYAMLPath)
+	if err != nil {
+		return nil, errors.New("failed to read computed nixy.yml").Wrap(err).KV("path", fsPaths.GeneratedNixyYAMLPath)
+	}
+
+	parser, err := yamlAST.NewParser(b)
+	if err != nil {
+		return nil, err
+	}
+
+	var n NixyYAML
+	if err := parser.Decode(&n); err != nil {
+		return nil, err
+	}
+
+	return &InNixyShell{
+		NixyYAML: &n,
+		fsPaths:  fsPaths,
+	}, nil
 }

@@ -3,13 +3,14 @@ package nixy
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/nxtcoder17/fastlog"
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
+	"github.com/nxtcoder17/nixy/internal/templates"
 )
 
 type Build struct {
@@ -70,10 +71,10 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 		return err
 	}
 
-	slog.Debug(fmt.Sprintf("[Build %s] Executing", target), "command", cmd.String())
+	fastlog.Debug(fmt.Sprintf("[Build %s] Executing", target), "command", cmd.String())
 
 	defer func() {
-		slog.Debug("Shell Exited")
+		fastlog.Debug("Shell Exited")
 	}()
 
 	if err := cmd.Run(); err != nil {
@@ -83,7 +84,7 @@ func (nixy *NixyWrapper) Build(ctx *Context, target string) error {
 	return nil
 }
 
-func (n *InShellNixy) Build(ctx context.Context, target string) error {
+func (n *InShellNixy) Build(ctx *app.Context, target string) error {
 	build, ok := n.Builds[target]
 	if !ok {
 		return fmt.Errorf("build target (%s) does not exist", target)
@@ -117,11 +118,11 @@ func (n *InShellNixy) Build(ctx context.Context, target string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 
-	slog.Debug("Build Started")
-	slog.Debug(fmt.Sprintf("[Build %s] Executing", target), "command", cmd.String())
+	fastlog.Debug("Build Started")
+	fastlog.Debug(fmt.Sprintf("[Build %s] Executing", target), "command", cmd.String())
 
 	defer func() {
-		slog.Debug("Build Finished")
+		fastlog.Debug("Build Finished")
 	}()
 
 	if err := cmd.Run(); err != nil {

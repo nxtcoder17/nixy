@@ -4,6 +4,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/nxtcoder17/fastlog v0.0.0-20260613184800-b9ad2781f7fd h1:oWqkU2miwrzFGl+YAcPc4kITc4wMMs25eqvbkhQCrA0=
 github.com/nxtcoder17/fastlog v0.0.0-20260613184800-b9ad2781f7fd/go.mod h1:7c4hiLHr818voNoAD7+y/MbdFW8eqbhIzRh5C0qDXqc=
+github.com/nxtcoder17/fastlog v0.0.0-20260627152536-8a7ba81411c1 h1:w6du+SGOWA/F1/t+8Q44RMgBcYdNvhgICbqV50ZDNOU=
+github.com/nxtcoder17/fastlog v0.0.0-20260627152536-8a7ba81411c1/go.mod h1:7c4hiLHr818voNoAD7+y/MbdFW8eqbhIzRh5C0qDXqc=
 github.com/nxtcoder17/go.errors v0.0.0-20251116060059-d31bd582d4c8 h1:C1vUEvYbbpofqK4xnbEU1htxZl66myq6ZJfHpcdA/GQ=
 github.com/nxtcoder17/go.errors v0.0.0-20251116060059-d31bd582d4c8/go.mod h1:9gp0I4JikKZGKflgPqqXCPZlIznVzlPWmnv+CWIrdxE=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

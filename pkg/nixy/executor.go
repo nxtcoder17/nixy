@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
+	"github.com/nxtcoder17/fastlog"
 	"maps"
 	"os"
 	"os/exec"
@@ -19,24 +19,6 @@ func XDGDataDir() string {
 	}
 
 	return filepath.Join(xdgDataHome, "nixy")
-}
-
-func GetGitRootForWorkspace(ctx context.Context, dir string) (string, bool) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
-	result, err := cmd.CombinedOutput()
-	if err != nil {
-		slog.Debug("[CHECK/git-root] show-toplevel (FAILED)", "cmd", cmd.String(), "stderr", string(result), "err", err)
-		return "", false
-	}
-
-	gitRoot := string(bytes.TrimSpace(result))
-
-	slog.Debug("[CHECK/git-root]", "git-root", gitRoot)
-	if strings.HasSuffix(gitRoot, "/.git") {
-		return gitRoot[:len(gitRoot)-len("/.git")], true
-	}
-
-	return gitRoot, true
 }
 
 func (nixy *NixyWrapper) prepareShellCommand(ctx *Context, command string, args ...string) (*exec.Cmd, error) {

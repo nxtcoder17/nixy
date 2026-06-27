@@ -12,13 +12,13 @@ func Test_parsePackage(t *testing.T) {
 	tests := []struct {
 		name    string
 		pkg     string
-		want    *NormalizedPackage
+		want    *Package
 		wantErr bool
 	}{
 		{
 			name: "[VALID] simple package reference",
 			pkg:  "go",
-			want: &NormalizedPackage{
+			want: &Package{
 				NixPackage: &NixPackage{
 					Name:   "go",
 					Commit: "",
@@ -29,7 +29,7 @@ func Test_parsePackage(t *testing.T) {
 		{
 			name: "[VALID] package with nixpkgs key",
 			pkg:  "stable#go",
-			want: &NormalizedPackage{
+			want: &Package{
 				NixPackage: &NixPackage{
 					Name:   "go",
 					Commit: "stable",
@@ -40,7 +40,7 @@ func Test_parsePackage(t *testing.T) {
 		{
 			name: "[VALID] package with custom key",
 			pkg:  "unstable#python314",
-			want: &NormalizedPackage{
+			want: &Package{
 				NixPackage: &NixPackage{
 					Name:   "python314",
 					Commit: "unstable",
@@ -51,7 +51,7 @@ func Test_parsePackage(t *testing.T) {
 		{
 			name: "[VALID] package with nested attribute",
 			pkg:  "cuda#cudaPackages.cudatoolkit",
-			want: &NormalizedPackage{
+			want: &Package{
 				NixPackage: &NixPackage{
 					Name:   "cudaPackages.cudatoolkit",
 					Commit: "cuda",
@@ -135,15 +135,15 @@ func Test_parsePackage(t *testing.T) {
 func TestURLPackage_MarshalYAML_KeyOrdering(t *testing.T) {
 	tests := []struct {
 		name string
-		pkg  *NormalizedPackage
+		pkg  *Package
 		want string
 	}{
 		{
 			name: "single platform",
-			pkg: &NormalizedPackage{
+			pkg: &Package{
 				URLPackage: &URLPackage{
 					Name: "run",
-					Sources: map[string]URLAndSHA{
+					Sources: map[string]PackageURLAndSHA{
 						"linux/amd64": {URL: "https://example.com/run-linux-amd64", SHA256: "abc123"},
 					},
 					BinPaths:    []string{"bin/run"},
@@ -163,10 +163,10 @@ installHook: |-
 		},
 		{
 			name: "multiple platforms sorted alphabetically",
-			pkg: &NormalizedPackage{
+			pkg: &Package{
 				URLPackage: &URLPackage{
 					Name: "run",
-					Sources: map[string]URLAndSHA{
+					Sources: map[string]PackageURLAndSHA{
 						"linux/amd64":  {URL: "https://example.com/run-linux-amd64", SHA256: "linux123"},
 						"darwin/arm64": {URL: "https://example.com/run-darwin-arm64", SHA256: "darwin123"},
 						"darwin/amd64": {URL: "https://example.com/run-darwin-amd64", SHA256: "darwinx86"},
@@ -264,17 +264,17 @@ onShellEnter: |
 func TestNixPackage_MarshalYAML(t *testing.T) {
 	tests := []struct {
 		name string
-		pkg  *NormalizedPackage
+		pkg  *Package
 		want string
 	}{
 		{
 			name: "simple package",
-			pkg:  &NormalizedPackage{NixPackage: &NixPackage{Name: "go"}},
+			pkg:  &Package{NixPackage: &NixPackage{Name: "go"}},
 			want: "go\n",
 		},
 		{
 			name: "package with commit",
-			pkg:  &NormalizedPackage{NixPackage: &NixPackage{Name: "go", Commit: "unstable"}},
+			pkg:  &Package{NixPackage: &NixPackage{Name: "go", Commit: "unstable"}},
 			want: "nixpkgs/unstable#go\n",
 		},
 	}

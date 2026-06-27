@@ -14,7 +14,7 @@ import (
 	"github.com/nxtcoder17/fastlog"
 	errors "github.com/nxtcoder17/go.errors"
 	"github.com/nxtcoder17/nixy/internal/app"
-	"github.com/nxtcoder17/nixy/pkg/nixy"
+	// "github.com/nxtcoder17/nixy/pkg/nixy"
 	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 	"github.com/nxtcoder17/nixy/pkg/nixy2"
 	"github.com/urfave/cli/v3"
@@ -39,11 +39,6 @@ func main() {
 	ctx, cf := signal.NotifyContext(context.TODO(), syscall.SIGINT, syscall.SIGTERM)
 	defer cf()
 
-	appCtx, err := app.NewContext(ctx, Version)
-	if err != nil {
-		panic(err)
-	}
-
 	cmd := cli.Command{
 		Name:        "nixy",
 		Version:     Version,
@@ -67,10 +62,10 @@ func main() {
 		},
 
 		Commands: []*cli.Command{
-			actionInit(appCtx),
+			actionInit(),
 			actionShellHook(),
-			actionShell(appCtx),
-			actionBuild(appCtx),
+			actionShell(),
+			actionBuild(),
 		},
 
 		Suggest: true,
@@ -114,9 +109,9 @@ func locateNearestNixyFile() (string, error) {
 	return "", errors.New("failed to locate your nearest Nixyfile")
 }
 
-func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.NixyWrapper, error) {
+func loadFromNixyfile(appCtx *app.Context, c *cli.Command) (*nixy2.Nixy, error) {
 	if c.IsSet("file") {
-		return nixy.LoadFromFile(ctx, c.String("file"))
+		return nixy2.LoadFromFile(appCtx, c.String("file"))
 	}
 
 	f, err := locateNearestNixyFile()
@@ -124,10 +119,10 @@ func loadFromNixyfile(ctx context.Context, c *cli.Command) (*nixy.NixyWrapper, e
 		return nil, err
 	}
 
-	return nixy.LoadFromFile(ctx, f)
+	return nixy2.LoadFromFile(appCtx, f)
 }
 
-func writeDockerfile(projectDir string, build nixy.Build) error {
+func writeDockerfile(projectDir string, build nixy2.Build) error {
 	b, err := templates.RenderDockerfile()
 	if err != nil {
 		return err
@@ -147,15 +142,12 @@ func writeDockerfile(projectDir string, build nixy.Build) error {
 	return nil
 }
 
-func actionInit(appCtx *app.Context) *cli.Command {
+func actionInit() *cli.Command {
 	return &cli.Command{
 		Name:    "init",
 		Suggest: true,
 		Action: func(ctx context.Context, _ *cli.Command) error {
-			if err := nixy2.CreateFSPaths(appCtx); err != nil {
-				return err
-			}
-			return nixy.InitWorkspace(ctx)
+			return nixy2.CreateNixyYAML(ctx)
 		},
 	}
 }
@@ -187,21 +179,22 @@ func actionShellHook() *cli.Command {
 	}
 }
 
-func actionShell(appCtx *app.Context) *cli.Command {
+func actionShell() *cli.Command {
 	return &cli.Command{
 		Name:    "shell",
 		Suggest: true,
 		Action: func(ctx context.Context, c *cli.Command) error {
-			if err := nixy2.CreateFSPaths(appCtx); err != nil {
-				return err
-			}
-
-			n, err := loadFromNixyfile(ctx, c)
+			appCtx, err := app.NewContext(ctx, Version)
 			if err != nil {
 				return err
 			}
 
-			if err := n.Shell(n.Context, strings.Join(c.Args().Slice(), " ")); err != nil {
+			n, err := loadFromNixyfile(appCtx, c)
+			if err != nil {
+				return err
+			}
+
+			if err := n.Shell(appCtx, strings.Join(c.Args().Slice(), " ")); err != nil {
 				return err
 			}
 
@@ -210,7 +203,7 @@ func actionShell(appCtx *app.Context) *cli.Command {
 	}
 }
 
-func actionBuild(appCtx *app.Context) *cli.Command {
+func actionBuild() *cli.Command {
 	return &cli.Command{
 		Name:    "build",
 		Suggest: true,
@@ -221,41 +214,42 @@ func actionBuild(appCtx *app.Context) *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
+			appCtx, err := app.NewContext(ctx, Version)
+			if err != nil {
+				return err
+			}
+
 			if appCtx.Env.InNixyShell {
-				n, err := nixy.LoadInNixyShell(ctx)
+				n, err := nixy2.LoadInNixyShell(appCtx)
 				if err != nil {
 					return err
 				}
 
 				for _, target := range c.Args().Slice() {
-					if err := n.Build(ctx, target); err != nil {
+					if err := n.Build(appCtx, target); err != nil {
 						return err
 					}
 
 					if c.Bool("dockerfile") {
-						return writeDockerfile(n.PWD, n.Builds[target])
+						return writeDockerfile(appCtx.PWD, n.Builds[target])
 					}
 				}
 
 				return nil
 			}
 
-			if err := nixy2.CreateFSPaths(appCtx); err != nil {
-				return err
-			}
-
-			n, err := loadFromNixyfile(ctx, c)
+			n, err := loadFromNixyfile(appCtx, c)
 			if err != nil {
 				return err
 			}
 
 			for _, target := range c.Args().Slice() {
-				if err := n.Build(n.Context, target); err != nil {
+				if err := n.Build(appCtx, target); err != nil {
 					return err
 				}
 
 				if c.Bool("dockerfile") {
-					return writeDockerfile(n.Context.PWD, n.Builds[target])
+					return writeDockerfile(appCtx.PWD, n.Builds[target])
 				}
 			}
 

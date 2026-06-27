@@ -1,25 +1,75 @@
 package nixy2
 
 import (
+	"bytes"
+	"context"
+	"github.com/nxtcoder17/fastlog"
 	"github.com/nxtcoder17/go.errors"
 	"github.com/nxtcoder17/nixy/internal/app"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
-func CreateFSPaths(appCtx *app.Context) error {
-	// /nix/var/nix is path for a directory to be used for nix store
-	nixDir := filepath.Join(appCtx.NixyGlobalDir, "nix")
-	fakeHomeDir := filepath.Join(appCtx.NixyGlobalDir, "home")
-	artifactDir := filepath.Join(appCtx.PWD, appCtx.NixyProjectDir)
+type FSPaths struct {
+	NixStoreDir string
+	UserHomeDir string
 
-	return createDirs(
-		nixDir,
-		fakeHomeDir,
-		filepath.Join(fakeHomeDir, ".config", "nix"),
-		artifactDir,
-	)
+	GeneratedArtifactsDir       string
+	GeneratedConfigHashFilePath string
+	GeneratedNixyYAMLPath       string
+	GeneratedFlakeNixPath       string
+	GeneratedHooksDir           string
+
+	GeneratedHookOnShellEnterPath string
+}
+
+func GetGitRootForWorkspace(ctx context.Context, dir string) (string, bool) {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	result, err := cmd.CombinedOutput()
+	if err != nil {
+		fastlog.Debug("[CHECK/git-root] show-toplevel (FAILED)", "cmd", cmd.String(), "stderr", string(result), "err", err)
+		return "", false
+	}
+
+	gitRoot := string(bytes.TrimSpace(result))
+
+	fastlog.Debug("[CHECK/git-root]", "git-root", gitRoot)
+	if strings.HasSuffix(gitRoot, "/.git") {
+		return gitRoot[:len(gitRoot)-len("/.git")], true
+	}
+
+	return gitRoot, true
+}
+
+func CreateFSPaths(appCtx *app.Context) (*FSPaths, error) {
+	// /nix/var/nix is path for a directory to be used for nix store
+
+	fsPaths := &FSPaths{
+		NixStoreDir:           filepath.Join(appCtx.NixyGlobalDir, "nix"),
+		UserHomeDir:           filepath.Join(appCtx.NixyGlobalDir, "home"),
+		GeneratedArtifactsDir: filepath.Join(appCtx.PWD, appCtx.NixyProjectDir),
+	}
+
+	fsPaths.GeneratedNixyYAMLPath = filepath.Join(fsPaths.GeneratedArtifactsDir, "nixy.yml")
+	fsPaths.GeneratedFlakeNixPath = filepath.Join(fsPaths.GeneratedArtifactsDir, "flake.nix")
+	fsPaths.GeneratedHooksDir = filepath.Join(fsPaths.GeneratedArtifactsDir, "hooks")
+
+	fsPaths.GeneratedHookOnShellEnterPath = filepath.Join(fsPaths.GeneratedHooksDir, "shell-enter.sh")
+	fsPaths.GeneratedConfigHashFilePath = filepath.Join(fsPaths.GeneratedArtifactsDir, "nixy.sha256")
+
+	if err := createDirs(
+		fsPaths.NixStoreDir,
+		fsPaths.UserHomeDir,
+		fsPaths.GeneratedArtifactsDir,
+		fsPaths.GeneratedHooksDir,
+	); err != nil {
+		return nil, err
+	}
+
+	return fsPaths, nil
 }
 
 func createDirs(dirs ...string) error {
@@ -41,4 +91,20 @@ func exists(path string) bool {
 		return false
 	}
 	return false
+}
+
+func genCleanPathName(name string) string {
+	result := make([]byte, len(name))
+
+	for i, c := range []byte(name) {
+		if ('a' <= c && c <= 'z') ||
+			('A' <= c && c <= 'Z') ||
+			('0' <= c && c <= '9') {
+			result[i] = c
+		} else {
+			result[i] = '-'
+		}
+	}
+
+	return string(result)
 }

@@ -1,15 +1,16 @@
 nixpkgs:
   default: 050e09e091117c3d7328c7b2b7b577492c43c134
-
 packages:
   - go
   - fish
-  - name: run
-    sources:
-      linux/amd64:
-        url: "https://github.com/nxtcoder17/Runfile/releases/download/v1.6.0/run-linux-amd64"
-        sha256: sha256-HedtSRV7qrycROtRcp4GJOrp1+T6s1k3jU/v/h0y/7c=
-
+  # - name: run
+  #   sources:
+  #     linux/amd64:
+  #       url: "https://github.com/nxtcoder17/Runfile/releases/download/v1.6.0/run-linux-amd64"
+  #       sha256: sha256-HedtSRV7qrycROtRcp4GJOrp1+T6s1k3jU/v/h0y/7c=
+  #     darwin/arm64:
+  #       url: "https://github.com/nxtcoder17/Runfile/releases/download/v1.6.0/run-darwin-arm64"
+  #       sha256: 8a213c647a304ef992256a4c091532217c8aa3d19fa8433ec515722e38c38c7b
 builds:
   go-app-docker:
     dir: ./example/go-app-docker

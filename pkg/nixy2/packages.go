@@ -5,44 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 
+	"github.com/nxtcoder17/go.errors"
 	"github.com/nxtcoder17/nixy/internal/app"
-	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
+	"github.com/nxtcoder17/nixy/pkg/nixy2/templates"
 	"github.com/nxtcoder17/nixy/pkg/set"
 	"gopkg.in/yaml.v3"
 )
-
-type NixPackage struct {
-	Name   string
-	Commit string
-}
-
-func getOSArch() string {
-	return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
-}
-
-type URLAndSHA struct {
-	URL    string `yaml:"url"`
-	SHA256 string `yaml:"sha256"`
-}
-
-type URLPackage struct {
-	Name        string               `yaml:"name"`
-	Sources     map[string]URLAndSHA `yaml:"sources"`
-	InstallHook string               `yaml:"installHook,omitempty"`
-	BinPaths    []string             `yaml:"binPaths,omitempty"`
-}
-
-type NormalizedPackage struct {
-	*NixPackage
-	*URLPackage
-}
 
 // literalString is a helper type that marshals as a YAML literal-style string
 type literalString string
@@ -99,7 +73,7 @@ func (o orderedSources) MarshalYAML() (any, error) {
 	return node, nil
 }
 
-func (p *NormalizedPackage) UnmarshalYAML(value *yaml.Node) error {
+func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 	var s string
 	if err := value.Decode(&s); err == nil {
 		np, err := parseNixPackage(s)
@@ -129,13 +103,13 @@ func (p *NormalizedPackage) UnmarshalYAML(value *yaml.Node) error {
 		}
 	}
 
-	*p = NormalizedPackage{
+	*p = Package{
 		URLPackage: &urlpkg,
 	}
 	return nil
 }
 
-func (p *NormalizedPackage) MarshalYAML() (any, error) {
+func (p *Package) MarshalYAML() (any, error) {
 	if p.NixPackage != nil {
 		if p.NixPackage.Commit == "" {
 			return p.NixPackage.Name, nil
@@ -163,39 +137,39 @@ func (p *NormalizedPackage) MarshalYAML() (any, error) {
 	return p, nil
 }
 
-func parseNixPackage(pkg string) (*NormalizedPackage, error) {
+func parseNixPackage(pkg string) (*Package, error) {
 	parts := strings.SplitN(pkg, "#", 2)
 
 	switch len(parts) {
 	case 1:
 		// INFO: means just package name
-		return &NormalizedPackage{NixPackage: &NixPackage{Name: pkg, Commit: ""}}, nil
+		return &Package{NixPackage: &NixPackage{Name: pkg, Commit: ""}}, nil
 	case 2:
-		return &NormalizedPackage{NixPackage: &NixPackage{Name: parts[1], Commit: parts[0]}}, nil
+		return &Package{NixPackage: &NixPackage{Name: parts[1], Commit: parts[0]}}, nil
 	default:
 		return nil, fmt.Errorf("invalid package format: %s", pkg)
 	}
 }
 
 type WorkspaceFlakeGenParams struct {
-	NixPkgs          NixPkgsMap
+	NixPkgs          map[string]string
 	WorkspaceDirPath string
-	Packages         []*NormalizedPackage
+	Packages         []*Package
 	Libraries        []string
 	Builds           map[string]Build
 	EnvVars          map[string]string
 }
 
-func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.WorkspaceFlakeParams, error) {
+func genWorkspaceFlakeParams(appCtx *app.Context, params WorkspaceFlakeGenParams) (*templates.WorkspaceFlakeParams, error) {
 	result := templates.WorkspaceFlakeParams{
-		NixPkgsCommitsList: params.NixPkgs.List(),
+		NixPkgsCommitsList: slices.Collect(maps.Keys(params.NixPkgs)),
 		NixPkgsCommitsMap:  params.NixPkgs,
 		PackagesMap:        map[string][]string{},
 		LibrariesMap:       map[string][]string{},
 		URLPackages:        []templates.URLPackage{},
 		WorkspaceDir:       params.WorkspaceDirPath,
 		Builds:             map[string]templates.WorkspaceFlakePackgeBuild{},
-		OSArch:             getOSArch(),
+		OSArch:             appCtx.OSArch(),
 		EnvVars:            params.EnvVars,
 	}
 
@@ -205,6 +179,11 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 	for k := range params.NixPkgs {
 		packagesMap[k] = &set.Set[string]{}
 		librariesMap[k] = &set.Set[string]{}
+	}
+
+	defaultCommit, ok := params.NixPkgs["default"]
+	if !ok {
+		return nil, errors.New("no default nixpkgs commit found")
 	}
 
 	for i := range params.Packages {
@@ -217,7 +196,7 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 			nixpkg := pkg.NixPackage
 
 			if nixpkg.Commit == "" {
-				nixpkg.Commit = params.NixPkgs.DefaultCommit()
+				nixpkg.Commit = defaultCommit
 			}
 
 			packagesMap[nixpkg.Commit].Add(nixpkg.Name)
@@ -252,7 +231,7 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 		nixpkg := np.NixPackage
 
 		if nixpkg.Commit == "" {
-			nixpkg.Commit = params.NixPkgs.DefaultCommit()
+			nixpkg.Commit = defaultCommit
 		}
 
 		librariesMap[nixpkg.Commit].Add(nixpkg.Name)
@@ -269,7 +248,7 @@ func genWorkspaceFlakeParams(params WorkspaceFlakeGenParams) (*templates.Workspa
 				nixpkg := pkg.NixPackage
 
 				if nixpkg.Commit == "" {
-					nixpkg.Commit = params.NixPkgs.DefaultCommit()
+					nixpkg.Commit = defaultCommit
 				}
 
 				pkgBuild.PackagesMap[nixpkg.Commit] = append(pkgBuild.PackagesMap[nixpkg.Commit], nixpkg.Name)
@@ -300,22 +279,22 @@ type nixPrefetchResult struct {
 	StorePath string `json:"storePath"`
 }
 
-// findNixBinary locates the nix binary, first checking PATH then falling back
-// to the static nix binary in the nixy data directory.
-func findNixBinary() (string, error) {
-	// Try to find nix in PATH first
-	if nixPath, err := exec.LookPath("nix"); err == nil {
-		return nixPath, nil
-	}
-
-	// Fall back to static nix binary path
-	staticNixPath := filepath.Join(XDGDataDir(), "profiles", "default", "nix", "bin", "nix")
-	if exists(staticNixPath) {
-		return staticNixPath, nil
-	}
-
-	return "", fmt.Errorf("nix binary not found in PATH or at %s", staticNixPath)
-}
+// // findNixBinary locates the nix binary, first checking PATH then falling back
+// // to the static nix binary in the nixy data directory.
+// func findNixBinary() (string, error) {
+// 	// Try to find nix in PATH first
+// 	if nixPath, err := exec.LookPath("nix"); err == nil {
+// 		return nixPath, nil
+// 	}
+//
+// 	// Fall back to static nix binary path
+// 	staticNixPath := filepath.Join(XDGDataDir(), "profiles", "default", "nix", "bin", "nix")
+// 	if exists(staticNixPath) {
+// 		return staticNixPath, nil
+// 	}
+//
+// 	return "", fmt.Errorf("nix binary not found in PATH or at %s", staticNixPath)
+// }
 
 // fetchURLPackageHash fetches the SHA256 hash of a file at the given URL
 // using `nix store prefetch-file` to download the file into the Nix store,
@@ -325,14 +304,14 @@ func fetchURLPackageHash(ctx *app.Context, url string) (string, error) {
 		return "", fmt.Errorf("empty URL provided")
 	}
 
-	nixBin, err := findNixBinary()
-	if err != nil {
-		return "", err
-	}
+	// nixBin, err := findNixBinary()
+	// if err != nil {
+	// 	return "", err
+	// }
 
 	slog.Info("Fetching", "Package", url)
 
-	cmd := exec.CommandContext(ctx, nixBin, "--extra-experimental-features", "nix-command", "store", "prefetch-file", "--json", "--hash-type", "sha256", url)
+	cmd := exec.CommandContext(ctx, "nix", "--extra-experimental-features", "nix-command", "store", "prefetch-file", "--json", "--hash-type", "sha256", url)
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
