@@ -148,7 +148,7 @@ func (n *Nixy) nixShellExec(appCtx *app.Context, program string) (*exec.Cmd, err
 		strings.Join(scripts, "\n"),
 	)
 
-	cmd, err := n.Executor.Exec(appCtx, "nix", nixShell...)
+	cmd, err := n.Executor.Exec(appCtx, "/usr/bin/nix", nixShell...)
 	if err != nil {
 		return nil, err
 	}

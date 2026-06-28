@@ -56,7 +56,7 @@ func main() {
 		EnableShellCompletion: true,
 
 		Before: func(ctx context.Context, c *cli.Command) (context.Context, error) {
-			logger := fastlog.New().DebugMode(c.Bool("debug")).Console()
+			logger := fastlog.New().DebugMode(c.Bool("debug")).SkipCallerFrames(1).Console()
 			fastlog.SetDefaultLogger(logger)
 			return ctx, nil
 		},

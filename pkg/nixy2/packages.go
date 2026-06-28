@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nxtcoder17/fastlog"
 	"github.com/nxtcoder17/go.errors"
 	"github.com/nxtcoder17/nixy/internal/app"
 	"github.com/nxtcoder17/nixy/pkg/nixy2/templates"
@@ -181,9 +182,8 @@ func genWorkspaceFlakeParams(appCtx *app.Context, params WorkspaceFlakeGenParams
 		librariesMap[k] = &set.Set[string]{}
 	}
 
-	defaultCommit, ok := params.NixPkgs["default"]
-	if !ok {
-		return nil, errors.New("no default nixpkgs commit found")
+	if _, ok := params.NixPkgs["default"]; !ok {
+		return nil, errors.New("nixpkgs must contain a default nixpkgs")
 	}
 
 	for i := range params.Packages {
@@ -196,9 +196,10 @@ func genWorkspaceFlakeParams(appCtx *app.Context, params WorkspaceFlakeGenParams
 			nixpkg := pkg.NixPackage
 
 			if nixpkg.Commit == "" {
-				nixpkg.Commit = defaultCommit
+				nixpkg.Commit = "default"
 			}
 
+			fastlog.Debug("PKG", "name", nixpkg.Name, "commit", nixpkg.Commit)
 			packagesMap[nixpkg.Commit].Add(nixpkg.Name)
 		}
 
@@ -231,7 +232,7 @@ func genWorkspaceFlakeParams(appCtx *app.Context, params WorkspaceFlakeGenParams
 		nixpkg := np.NixPackage
 
 		if nixpkg.Commit == "" {
-			nixpkg.Commit = defaultCommit
+			nixpkg.Commit = "default"
 		}
 
 		librariesMap[nixpkg.Commit].Add(nixpkg.Name)
@@ -248,7 +249,7 @@ func genWorkspaceFlakeParams(appCtx *app.Context, params WorkspaceFlakeGenParams
 				nixpkg := pkg.NixPackage
 
 				if nixpkg.Commit == "" {
-					nixpkg.Commit = defaultCommit
+					nixpkg.Commit = "default"
 				}
 
 				pkgBuild.PackagesMap[nixpkg.Commit] = append(pkgBuild.PackagesMap[nixpkg.Commit], nixpkg.Name)
