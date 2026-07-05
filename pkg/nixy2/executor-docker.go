@@ -11,51 +11,92 @@ import (
 	"github.com/nxtcoder17/nixy/internal/app"
 )
 
+type DockerModeConfig struct {
+	Ports []string `yaml:"ports,omitempty"`
+}
+
 type dockerExecutor struct {
 	NixStoreDockerVolume string
 	HomeDirDockerVolume  string
 
 	Mounts []NixyMount
 	Env    map[string]string
+	Ports  []containerPort
+}
+
+type containerPort struct {
+	HostPort      string
+	ContainerPort string
 }
 
 const AttrReadOnly = "ro"
 const AttrSharedVolume = "z"
 
 func (n *Nixy) NewDockerExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor {
-	return &dockerExecutor{
+	d := &dockerExecutor{
 		NixStoreDockerVolume: "nixy-nix-store",
 		HomeDirDockerVolume:  "nixy-user-home",
 		Mounts:               n.Mounts,
 		Env:                  n.Env,
 	}
+
+	for _, v := range n.DockerModeConfig.Ports {
+		sp := strings.Split(v, ":")
+		if len(sp) > 2 {
+			continue
+		}
+		if len(sp) == 1 {
+			d.Ports = append(d.Ports, containerPort{HostPort: sp[0], ContainerPort: sp[0]})
+		}
+		if len(sp) == 2 {
+			d.Ports = append(d.Ports, containerPort{HostPort: sp[0], ContainerPort: sp[1]})
+		}
+	}
+
+	return d
 }
 
 func (d *dockerExecutor) createNixVolume(appCtx *app.Context) error {
-	isNewlyCreated := false
+	hasNewVolume := false
 
 	if err := exec.CommandContext(appCtx.Context, "docker", "volume", "inspect", d.NixStoreDockerVolume).Run(); err != nil {
-		isNewlyCreated = true
+		hasNewVolume = true
 		if err := exec.CommandContext(appCtx.Context, "docker", "volume", "create", d.NixStoreDockerVolume).Run(); err != nil {
 			return err
 		}
 	}
 
 	if err := exec.CommandContext(appCtx.Context, "docker", "volume", "inspect", d.HomeDirDockerVolume).Run(); err != nil {
-		isNewlyCreated = true
+		hasNewVolume = true
 		if err := exec.CommandContext(appCtx.Context, "docker", "volume", "create", d.HomeDirDockerVolume).Run(); err != nil {
 			return err
 		}
 	}
 
-	if isNewlyCreated {
-		if err2 := exec.CommandContext(appCtx.Context, "docker", "run", "--rm",
+	if hasNewVolume {
+		uid := os.Getuid()
+		gid := os.Getgid()
+
+		initScript := fmt.Sprintf(`
+mkdir -p /nix/store /nix/var/nix /home/nixy/.config/nix
+if [ ! -f /home/nixy/.config/nix/nix.conf ]; then
+  echo "experimental-features = nix-command flakes" > /home/nixy/.config/nix/nix.conf
+fi
+chown -R %d:%d /nix /home
+`, uid, gid)
+
+		out, err := exec.CommandContext(appCtx.Context, "docker", "run", "--rm",
+			"--user", "0:0",
 			"-v", d.HomeDirDockerVolume+":"+"/home:z",
 			"-v", d.NixStoreDockerVolume+":"+"/nix:z",
-			"ghcr.io/nxtcoder17/nix:latest",
-			"sh", "-c", fmt.Sprintf("mkdir -p /nix/store /nix/var/nix /home/nixy && chown -R %d:%d /nix /home/", os.Getuid(), os.Getgid()),
-		).Run(); err2 != nil {
-			return err2
+			appCtx.NixyDockerModeImage,
+			"sh", "-c", initScript,
+		).CombinedOutput()
+
+		fastlog.Debug("create volume output", "text", string(out))
+		if err != nil {
+			fastlog.Debug("create volume output", "text", string(out), "err", err)
+			return err
 		}
 	}
 
@@ -71,6 +112,7 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 	}
 
 	if err := d.createNixVolume(appCtx); err != nil {
+		fastlog.Debug("GOT", "err", err)
 		return nil, err
 	}
 
@@ -97,7 +139,7 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 			"-it",
 			"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 			"-e", "HOME=" + containerHome,
-			"-e", "NIX_CONFIG=ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenance com.apple.quarantine com.apple.macl com.apple.metadata:kMDItemWhereFroms com.apple.metadata:_kMDItemUserTags com.apple.FinderInfo com.apple.lastuseddate#PS",
+			// "-e", "NIX_CONFIG=ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenance com.apple.quarantine com.apple.macl com.apple.metadata:kMDItemWhereFroms com.apple.metadata:_kMDItemUserTags com.apple.FinderInfo com.apple.lastuseddate#PS",
 		}
 
 		for k, v := range d.Env {
@@ -117,6 +159,8 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 	// Build the docker run command to start the container
 	dockerArgs := []string{
 		"run",
+		"--security-opt",
+		"seccomp=unconfined",
 		"--name", containerName,
 		"--hostname", "nixy",
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
@@ -157,7 +201,8 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 		dockerArgs = append(dockerArgs, "-e", k+"="+v)
 	}
 
-	dockerArgs = append(dockerArgs, "--rm", "-it", "ghcr.io/nxtcoder17/nix:latest")
+	dockerArgs = append(dockerArgs, "--rm", "-it", appCtx.NixyDockerModeImage)
+	// dockerArgs = append(dockerArgs, "--rm", "-it", "nixos/nix:latest")
 	dockerArgs = append(dockerArgs, cmd)
 	dockerArgs = append(dockerArgs, args...)
 

@@ -14,9 +14,8 @@ import (
 	"github.com/nxtcoder17/fastlog"
 	errors "github.com/nxtcoder17/go.errors"
 	"github.com/nxtcoder17/nixy/internal/app"
-	// "github.com/nxtcoder17/nixy/pkg/nixy"
-	"github.com/nxtcoder17/nixy/pkg/nixy/templates"
 	"github.com/nxtcoder17/nixy/pkg/nixy2"
+	"github.com/nxtcoder17/nixy/pkg/nixy2/templates"
 	"github.com/urfave/cli/v3"
 )
 

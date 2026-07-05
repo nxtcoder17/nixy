@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	yamlAST "github.com/nxtcoder17/nixy/pkg/yaml-ast"
 	"gopkg.in/yaml.v3"
 )
 
@@ -222,19 +223,26 @@ onShellEnter: |
   export PATH="$PWD/bin:$PATH"
 `
 
-	var rootNode yaml.Node
-	if err := yaml.Unmarshal([]byte(input), &rootNode); err != nil {
-		t.Fatalf("failed to unmarshal: %v", err)
+	parser, err := yamlAST.NewParser([]byte(input))
+	if err != nil {
+		t.Fatalf("failed to create parser: %v", err)
 	}
 
-	if err := updateSHA256InNode(&rootNode, 1, "linux/amd64", "newhash123"); err != nil {
+	err = parser.ApplyPatches([]yamlAST.PatchOp{
+		{
+			Op:    "add",
+			Path:  "/packages/1/sources/linux~1amd64/sha256",
+			Value: "newhash123",
+		},
+	})
+	if err != nil {
 		t.Fatalf("failed to update sha256: %v", err)
 	}
 
 	var buf bytes.Buffer
 	encoder := yaml.NewEncoder(&buf)
 	encoder.SetIndent(2)
-	if err := encoder.Encode(&rootNode); err != nil {
+	if err := encoder.Encode(parser.Root()); err != nil {
 		t.Fatalf("failed to encode: %v", err)
 	}
 
@@ -250,7 +258,7 @@ packages:
     sources:
       linux/amd64:
         url: "https://example.com/run"
-        sha256: "newhash123"
+        sha256: newhash123
 # Shell hooks
 onShellEnter: |
   export PATH="$PWD/bin:$PATH"

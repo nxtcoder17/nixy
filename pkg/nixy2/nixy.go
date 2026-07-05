@@ -32,6 +32,8 @@ type NixyYAML struct {
 	Mounts []NixyMount `yaml:"mounts,omitempty"`
 
 	sha256Sum string `yaml:"-"`
+
+	DockerModeConfig DockerModeConfig `yaml:"docker-mode,omitempty"`
 }
 
 // NixyMount is for mounting a host file system path to a path in nixy shell
@@ -259,6 +261,8 @@ func LoadFromFile(appCtx *app.Context, f string) (*Nixy, error) {
 		n.Executor = n.NewDockerExecutor(appCtx, fsPaths)
 	case app.LocalMode:
 		n.Executor = n.NewLocalExecutor(appCtx, fsPaths)
+	case app.ColimaMode:
+		n.Executor = n.NewColimaExecutor(appCtx, fsPaths)
 	}
 
 	return n, nil

@@ -18,6 +18,7 @@ type FSPaths struct {
 	UserHomeDir string
 
 	GeneratedArtifactsDir       string
+	GeneratedNixConfigFilePath  string
 	GeneratedConfigHashFilePath string
 	GeneratedNixyYAMLPath       string
 	GeneratedFlakeNixPath       string
@@ -53,6 +54,7 @@ func CreateFSPaths(appCtx *app.Context) (*FSPaths, error) {
 		GeneratedArtifactsDir: filepath.Join(appCtx.PWD, appCtx.NixyProjectDir),
 	}
 
+	fsPaths.GeneratedNixConfigFilePath = filepath.Join(fsPaths.GeneratedArtifactsDir, "nix.conf")
 	fsPaths.GeneratedNixyYAMLPath = filepath.Join(fsPaths.GeneratedArtifactsDir, "nixy.yml")
 	fsPaths.GeneratedFlakeNixPath = filepath.Join(fsPaths.GeneratedArtifactsDir, "flake.nix")
 	fsPaths.GeneratedHooksDir = filepath.Join(fsPaths.GeneratedArtifactsDir, "hooks")

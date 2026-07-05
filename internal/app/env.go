@@ -13,6 +13,7 @@ const (
 	LocalIgnoreEnvMode NixyMode = "local-ignore-env"
 	DockerMode         NixyMode = "docker"
 	BubbleWrapMode     NixyMode = "bubblewrap"
+	ColimaMode         NixyMode = "colima"
 )
 
 type Env struct {
@@ -37,6 +38,8 @@ type Env struct {
 
 	// NixyExecutableBinPath is absolute path to the nixy executable, it is used to ensure nixy binary is in nixy shell's PATH
 	NixyExecutableBinPath string `env:"-"`
+
+	NixyDockerModeImage string `env:"NIXY_DOCKER_MODE_IMAGE" default:"ghcr.io/nxtcoder17/nix:nixy"`
 }
 
 func LoadEnv() (*Env, error) {

@@ -87,6 +87,15 @@ func (n *Nixy) nixShellExec(appCtx *app.Context, program string) (*exec.Cmd, err
 		return "bash"
 	}()
 
+	b := []byte(`
+experimental-features = flakes nix-command
+ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenance com.apple.quarantine com.apple.macl com.apple.metadata:kMDItemWhereFroms com.apple.metadata:_kMDItemUserTags com.apple.FinderInfo com.apple.lastuseddate#PS
+`)
+
+	if err := os.WriteFile(n.fsPaths.GeneratedNixConfigFilePath, b, 0644); err != nil {
+		return nil, err
+	}
+
 	// keys := make([]string, 0, len(userEnv))
 	// for k := range userEnv {
 	// 	keys = append(keys, k)
@@ -138,18 +147,21 @@ func (n *Nixy) nixShellExec(appCtx *app.Context, program string) (*exec.Cmd, err
 	scripts = append(scripts, fmt.Sprintf("source %s", shellEnvFileName))
 	scripts = append(scripts, "exec "+program)
 
-	nixShell := []string{"shell"}
-
-	nixShell = append(nixShell,
+	nixShell := []string{
+		"--extra-experimental-features",
+		"nix-command",
+		"shell",
 		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs["default"]),
 		"--command",
 		"bash",
 		"-c",
 		strings.Join(scripts, "\n"),
-	)
+	}
 
-	cmd, err := n.Executor.Exec(appCtx, "/usr/bin/nix", nixShell...)
+	fastlog.Debug("calling executor exec ")
+	cmd, err := n.Executor.Exec(appCtx, "nix", nixShell...)
 	if err != nil {
+		fastlog.Debug("called executor exec ", "error", err)
 		return nil, err
 	}
 
