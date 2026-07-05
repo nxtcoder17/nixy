@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
 )
 
@@ -19,7 +20,7 @@ type Context struct {
 }
 
 func (c *Context) FlakePath() string {
-	return ""
+	return filepath.Join(c.PWD, c.NixyProjectDir)
 }
 
 func NewContext(ctx context.Context, version string) (*Context, error) {

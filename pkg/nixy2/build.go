@@ -57,7 +57,8 @@ func (nw *Nixy) Build(appCtx *app.Context, target string) error {
 		return err
 	}
 
-	cmd, err := nw.nixShellExec(appCtx, "echo build successfull")
+	buildScriptRelativePath := filepath.Join(appCtx.NixyProjectDir, buildScriptName)
+	cmd, err := nw.nixShellExec(appCtx, "bash "+buildScriptRelativePath)
 	if err != nil {
 		return err
 	}

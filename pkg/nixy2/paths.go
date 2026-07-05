@@ -20,9 +20,10 @@ type FSPaths struct {
 	GeneratedArtifactsDir       string
 	GeneratedNixConfigFilePath  string
 	GeneratedConfigHashFilePath string
-	GeneratedNixyYAMLPath       string
-	GeneratedFlakeNixPath       string
-	GeneratedHooksDir           string
+	GeneratedNixyYAMLPath         string
+	GeneratedFlakeNixPath         string
+	GeneratedHooksDir             string
+	GeneratedColimaConfigFilePath string
 
 	GeneratedHookOnShellEnterPath string
 }
@@ -58,6 +59,7 @@ func CreateFSPaths(appCtx *app.Context) (*FSPaths, error) {
 	fsPaths.GeneratedNixyYAMLPath = filepath.Join(fsPaths.GeneratedArtifactsDir, "nixy.yml")
 	fsPaths.GeneratedFlakeNixPath = filepath.Join(fsPaths.GeneratedArtifactsDir, "flake.nix")
 	fsPaths.GeneratedHooksDir = filepath.Join(fsPaths.GeneratedArtifactsDir, "hooks")
+	fsPaths.GeneratedColimaConfigFilePath = filepath.Join(fsPaths.GeneratedArtifactsDir, "colima.yaml")
 
 	fsPaths.GeneratedHookOnShellEnterPath = filepath.Join(fsPaths.GeneratedHooksDir, "shell-enter.sh")
 	fsPaths.GeneratedConfigHashFilePath = filepath.Join(fsPaths.GeneratedArtifactsDir, "nixy.sha256")

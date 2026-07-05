@@ -55,106 +55,130 @@ func (p *Parser) ApplyPatches(ops []PatchOp) error {
 	return nil
 }
 
+// SetScalarByPointer sets a scalar value at the given JSON Pointer path.
+// It uses "add" semantics (create or overwrite).
+func (p *Parser) SetScalarByPointer(ptr string, value string) error {
+	op := PatchOp{
+		Op:    "add",
+		Path:  ptr,
+		Value: value,
+	}
+	return p.applyOp(op)
+}
+
+func toNode(val any) (*yaml.Node, error) {
+	if val == nil {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
+	}
+	b, err := yaml.Marshal(val)
+	if err != nil {
+		return nil, err
+	}
+	var node yaml.Node
+	if err := yaml.Unmarshal(b, &node); err != nil {
+		return nil, err
+	}
+	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		return node.Content[0], nil
+	}
+	return &node, nil
+}
+
 func (p *Parser) applyOp(op PatchOp) error {
 	parts, err := parseJSONPointer(op.Path)
 	if err != nil {
 		return err
 	}
 
-	// Helper to convert Go value to yaml.Node
-	toNode := func(val any) (*yaml.Node, error) {
-		if val == nil {
-			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
-		}
-		b, err := yaml.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-		var node yaml.Node
-		if err := yaml.Unmarshal(b, &node); err != nil {
-			return nil, err
-		}
-		if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
-			return node.Content[0], nil
-		}
-		return &node, nil
-	}
-
 	switch op.Op {
 	case "test":
-		target, err := resolvePath(p.rootNode, parts)
-		if err != nil || target.TargetNode == nil {
-			return fmt.Errorf("path %q not found for test", op.Path)
-		}
-		expected, err := toNode(op.Value)
-		if err != nil {
-			return err
-		}
-		if !equalNodes(target.TargetNode, expected) {
-			return fmt.Errorf("value mismatch at %q", op.Path)
-		}
-
+		return p.applyTest(parts, op)
 	case "remove":
-		target, err := resolvePath(p.rootNode, parts)
-		if err != nil || target.Parent == nil {
-			return fmt.Errorf("path %q not found for remove", op.Path)
-		}
-		return removeNode(target)
-
+		return p.applyRemove(parts, op)
 	case "add", "replace":
-		target, err := resolvePath(p.rootNode, parts)
-		if err != nil {
-			return err
-		}
-		if op.Op == "replace" && target.TargetNode == nil {
-			return fmt.Errorf("cannot replace non-existent path %q", op.Path)
-		}
-		valNode, err := toNode(op.Value)
-		if err != nil {
-			return err
-		}
-		return addOrReplaceNode(target, valNode)
-
+		return p.applyAddOrReplace(parts, op)
 	case "move":
-		fromParts, err := parseJSONPointer(op.From)
-		if err != nil {
-			return err
-		}
-		fromTarget, err := resolvePath(p.rootNode, fromParts)
-		if err != nil || fromTarget.TargetNode == nil {
-			return fmt.Errorf("from path %q not found for move", op.From)
-		}
-		valNode := cloneNode(fromTarget.TargetNode)
-		if err := removeNode(fromTarget); err != nil {
-			return err
-		}
-		toTarget, err := resolvePath(p.rootNode, parts)
-		if err != nil {
-			return err
-		}
-		return addOrReplaceNode(toTarget, valNode)
-
+		return p.applyMove(parts, op)
 	case "copy":
-		fromParts, err := parseJSONPointer(op.From)
-		if err != nil {
-			return err
-		}
-		fromTarget, err := resolvePath(p.rootNode, fromParts)
-		if err != nil || fromTarget.TargetNode == nil {
-			return fmt.Errorf("from path %q not found for copy", op.From)
-		}
-		valNode := cloneNode(fromTarget.TargetNode)
-		toTarget, err := resolvePath(p.rootNode, parts)
-		if err != nil {
-			return err
-		}
-		return addOrReplaceNode(toTarget, valNode)
-
+		return p.applyCopy(parts, op)
 	default:
 		return fmt.Errorf("unsupported op: %q", op.Op)
 	}
+}
 
+func (p *Parser) applyTest(parts []string, op PatchOp) error {
+	target, err := resolvePath(p.rootNode, parts)
+	if err != nil || target.TargetNode == nil {
+		return fmt.Errorf("path %q not found for test", op.Path)
+	}
+	expected, err := toNode(op.Value)
+	if err != nil {
+		return err
+	}
+	if !equalNodes(target.TargetNode, expected) {
+		return fmt.Errorf("value mismatch at %q", op.Path)
+	}
 	return nil
+}
+
+func (p *Parser) applyRemove(parts []string, op PatchOp) error {
+	target, err := resolvePath(p.rootNode, parts)
+	if err != nil || target.Parent == nil {
+		return fmt.Errorf("path %q not found for remove", op.Path)
+	}
+	return removeNode(target)
+}
+
+func (p *Parser) applyAddOrReplace(parts []string, op PatchOp) error {
+	target, err := resolvePath(p.rootNode, parts)
+	if err != nil {
+		return err
+	}
+	if op.Op == "replace" && target.TargetNode == nil {
+		return fmt.Errorf("cannot replace non-existent path %q", op.Path)
+	}
+	valNode, err := toNode(op.Value)
+	if err != nil {
+		return err
+	}
+	return addOrReplaceNode(target, valNode)
+}
+
+func (p *Parser) applyMove(parts []string, op PatchOp) error {
+	fromParts, err := parseJSONPointer(op.From)
+	if err != nil {
+		return err
+	}
+	fromTarget, err := resolvePath(p.rootNode, fromParts)
+	if err != nil || fromTarget.TargetNode == nil {
+		return fmt.Errorf("from path %q not found for move", op.From)
+	}
+	valNode := cloneNode(fromTarget.TargetNode)
+	if err := removeNode(fromTarget); err != nil {
+		return err
+	}
+	toTarget, err := resolvePath(p.rootNode, parts)
+	if err != nil {
+		return err
+	}
+	return addOrReplaceNode(toTarget, valNode)
+}
+
+func (p *Parser) applyCopy(parts []string, op PatchOp) error {
+	fromParts, err := parseJSONPointer(op.From)
+	if err != nil {
+		return err
+	}
+	fromTarget, err := resolvePath(p.rootNode, fromParts)
+	if err != nil || fromTarget.TargetNode == nil {
+		return fmt.Errorf("from path %q not found for copy", op.From)
+	}
+	valNode := cloneNode(fromTarget.TargetNode)
+	toTarget, err := resolvePath(p.rootNode, parts)
+	if err != nil {
+		return err
+	}
+	return addOrReplaceNode(toTarget, valNode)
 }
 
 // JSON Pointer Path Resolution

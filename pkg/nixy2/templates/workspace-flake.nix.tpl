@@ -8,6 +8,7 @@
 {{- $projectDir := .WorkspaceDir }}
 {{- $builds := .Builds -}}
 {{- $osArch := .OSArch }}
+{{- $onShellEnterHookPath := .OnShellEnterScriptPath }}
 
 {{- $nixpkgsDefaultCommit := index $nixpkgsList 0 -}}
 {
@@ -191,16 +192,16 @@
             fi
 
             # INFO: this ensures, we always have /usr/bin/env
-            [ ! -e /usr/bin ] && [ -e "${pkgs.coreutils}/bin" ] && ln -sf ${pkgs.coreutils}/bin /usr/bin
-            [ ! -e /usr/share ] && [ -e "${pkgs.coreutils}/share" ] && ln -sf ${pkgs.coreutils}/share /usr/share
-            [ ! -e /usr/libexec ] && [ -e "${pkgs.coreutils}/libexec" ] && ln -sf ${pkgs.coreutils}/libexec /usr/libexec
-            [ ! -e /usr/lib ] && [ -e "${pkgs.coreutils}/lib" ] && ln -sf ${pkgs.coreutils}/lib /usr/lib
+            # [ ! -e /usr/bin ] && [ -e "${pkgs.coreutils}/bin" ] && ln -sf ${pkgs.coreutils}/bin /usr/bin
+            # [ ! -e /usr/share ] && [ -e "${pkgs.coreutils}/share" ] && ln -sf ${pkgs.coreutils}/share /usr/share
+            # [ ! -e /usr/libexec ] && [ -e "${pkgs.coreutils}/libexec" ] && ln -sf ${pkgs.coreutils}/libexec /usr/libexec
+            # [ ! -e /usr/lib ] && [ -e "${pkgs.coreutils}/lib" ] && ln -sf ${pkgs.coreutils}/lib /usr/lib
 
             # INFO: it seems like many tools have hardcoded value for /bin/sh, so we need to make sure that /bin/sh exists
-            if [ ! -e "/bin/sh" ]; then
-              mkdir -p /bin
-              ln -sf $(which bash) /bin/sh
-            fi
+            # if [ ! -e "/bin/sh" ]; then
+            #   mkdir -p /bin
+            #   ln -sf $(which bash) /bin/sh
+            # fi
 
             if [ -n "${libraries}" ]; then
               export LD_LIBRARY_PATH="${libraries}:$LD_LIBRARY_PATH"
@@ -210,8 +211,9 @@
             export {{$k}}="{{$v}}"
             {{- end }}
 
-            if [ -e shell-enter.sh ]; then
-              source "shell-enter.sh"
+            if [ -e "{{$onShellEnterHookPath}}" ]; then
+              echo "Sourcing shell hook path {{$onShellEnterHookPath}}"
+              source "{{$onShellEnterHookPath}}"
             fi
 
             if [ -n "$NIXY_BUILD_SCRIPT" ] && [ -e "$NIXY_BUILD_SCRIPT" ]; then

@@ -24,7 +24,7 @@ type Env struct {
 	NixyMode NixyMode `env:"NIXY_MODE" default:"local"`
 
 	// NixyPreload is totally separate nixy.yml file, that is used while preparing nixy shell's environment
-	NixyPreload *string `env:"NIXY_PRELOAD"`
+	NixyPreload string `env:"NIXY_PRELOAD"`
 
 	// NixyProjectDir is directory inside a user's project next to `nixy.yml` file, in while nixy puts it's inflight and computed files
 	// This directory can be used to inspect, what's exactly is a part of your nixy shell

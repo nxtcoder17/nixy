@@ -159,19 +159,21 @@ type WorkspaceFlakeGenParams struct {
 	Libraries        []string
 	Builds           map[string]Build
 	EnvVars          map[string]string
+	FSPaths          *FSPaths
 }
 
 func genWorkspaceFlakeParams(appCtx *app.Context, params WorkspaceFlakeGenParams) (*templates.WorkspaceFlakeParams, error) {
 	result := templates.WorkspaceFlakeParams{
-		NixPkgsCommitsList: slices.Collect(maps.Keys(params.NixPkgs)),
-		NixPkgsCommitsMap:  params.NixPkgs,
-		PackagesMap:        map[string][]string{},
-		LibrariesMap:       map[string][]string{},
-		URLPackages:        []templates.URLPackage{},
-		WorkspaceDir:       params.WorkspaceDirPath,
-		Builds:             map[string]templates.WorkspaceFlakePackgeBuild{},
-		OSArch:             appCtx.OSArch(),
-		EnvVars:            params.EnvVars,
+		NixPkgsCommitsList:     slices.Collect(maps.Keys(params.NixPkgs)),
+		NixPkgsCommitsMap:      params.NixPkgs,
+		PackagesMap:            map[string][]string{},
+		LibrariesMap:           map[string][]string{},
+		URLPackages:            []templates.URLPackage{},
+		WorkspaceDir:           params.WorkspaceDirPath,
+		Builds:                 map[string]templates.WorkspaceFlakePackgeBuild{},
+		OSArch:                 appCtx.OSArch(),
+		EnvVars:                params.EnvVars,
+		OnShellEnterScriptPath: params.FSPaths.GeneratedHookOnShellEnterPath,
 	}
 
 	packagesMap := map[string]*set.Set[string]{}

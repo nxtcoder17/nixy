@@ -38,6 +38,7 @@ func (n *Nixy) generateNixyArtifacts(appCtx *app.Context) error {
 		Libraries:        n.Libraries,
 		Builds:           n.Builds,
 		EnvVars:          n.Env,
+		FSPaths:          n.fsPaths,
 	}
 
 	flakeParams, err := genWorkspaceFlakeParams(appCtx, input)
@@ -70,58 +71,80 @@ func (n *Nixy) generateNixyArtifacts(appCtx *app.Context) error {
 	return nil
 }
 
-func (n *Nixy) nixShellExec(appCtx *app.Context, program string) (*exec.Cmd, error) {
-	program = func() string {
-		if program != "" {
-			return program
-		}
-
-		if v, ok := n.Env["SHELL"]; ok {
-			return v
-		}
-
-		if v, ok := os.LookupEnv("SHELL"); ok {
-			return filepath.Base(v)
-		}
-
-		return "bash"
-	}()
-
-	b := []byte(`
-experimental-features = flakes nix-command
+func (n *Nixy) writeNixConfig() error {
+	b := []byte(`experimental-features = flakes nix-command
 ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenance com.apple.quarantine com.apple.macl com.apple.metadata:kMDItemWhereFroms com.apple.metadata:_kMDItemUserTags com.apple.FinderInfo com.apple.lastuseddate#PS
 `)
+	return os.WriteFile(n.fsPaths.GeneratedNixConfigFilePath, b, 0644)
+}
 
-	if err := os.WriteFile(n.fsPaths.GeneratedNixConfigFilePath, b, 0644); err != nil {
+func (n *Nixy) needsArtifactRegeneration() (bool, error) {
+	if !exists(n.fsPaths.GeneratedConfigHashFilePath) {
+		return true, nil
+	}
+
+	b, err := os.ReadFile(n.fsPaths.GeneratedConfigHashFilePath)
+	if err != nil {
+		return false, errors.New("failed to read generated nixy config hash file").
+			Wrap(err).
+			KV("hash-file", n.fsPaths.GeneratedConfigHashFilePath)
+	}
+
+	return string(b) != n.sha256Sum, nil
+}
+
+func (n *Nixy) updateConfigHash() string {
+	return strings.Join([]string{
+		fmt.Sprintf("printf '' > %s", n.fsPaths.GeneratedConfigHashFilePath),
+		fmt.Sprintf("nix print-dev-env path:. > %s", shellEnvFileName),
+		fmt.Sprintf("printf '%s' > %s", n.sha256Sum, n.fsPaths.GeneratedConfigHashFilePath),
+	}, "\n")
+}
+
+func (n *Nixy) resolveShellProgram(program string) string {
+	if program != "" {
+		return program
+	}
+
+	if v, ok := n.Env["SHELL"]; ok {
+		return v
+	}
+
+	if v, ok := os.LookupEnv("SHELL"); ok {
+		return filepath.Base(v)
+	}
+
+	return "bash"
+}
+
+func (n *Nixy) buildNixShellCommand(scripts []string) []string {
+	return []string{
+		"--extra-experimental-features", "nix-command",
+		"shell",
+		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs["default"]),
+		"--command", "bash", "-c",
+		strings.Join(scripts, "\n"),
+	}
+}
+
+func (n *Nixy) attachGitRootEnv(ctx *app.Context, cmd *exec.Cmd) {
+	nixyGitRoot := ctx.PWD
+	if gitRoot, ok := GetGitRootForWorkspace(ctx, ctx.PWD); ok {
+		nixyGitRoot = gitRoot
+	}
+	cmd.Env = append(cmd.Env, "NIXY_GIT_ROOT="+nixyGitRoot)
+}
+
+func (n *Nixy) nixShellExec(appCtx *app.Context, program string) (*exec.Cmd, error) {
+	program = n.resolveShellProgram(program)
+
+	if err := n.writeNixConfig(); err != nil {
 		return nil, err
 	}
 
-	// keys := make([]string, 0, len(userEnv))
-	// for k := range userEnv {
-	// 	keys = append(keys, k)
-	// }
-	// slices.Sort(keys)
-
-	// for k := range userEnv {
-	// 	expanded := os.Expand(
-	// 		strings.ReplaceAll(userEnv[k], "$$", "__DOLLOR_ESCAPE__"), func(s string) string {
-	// 			if v, ok := executorEnv[s]; ok {
-	// 				return v
-	// 			}
-	// 			return os.Getenv(s)
-	// 		},
-	// 	)
-	// 	userEnv[k] = strings.ReplaceAll(expanded, "__DOLLOR_ESCAPE__", "$")
-	// }
-
-	shouldGenNixyArtifacts := true
-	if exists(n.fsPaths.GeneratedConfigHashFilePath) {
-		b, err := os.ReadFile(n.fsPaths.GeneratedConfigHashFilePath)
-		if err != nil {
-			return nil, errors.New("failed to read generated nixy config hash file").Wrap(err).KV("hash-file", n.fsPaths.GeneratedConfigHashFilePath)
-		}
-
-		shouldGenNixyArtifacts = shouldGenNixyArtifacts || string(b) != n.sha256Sum
+	shouldGenNixyArtifacts, err := n.needsArtifactRegeneration()
+	if err != nil {
+		return nil, err
 	}
 
 	if shouldGenNixyArtifacts {
@@ -135,28 +158,16 @@ ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenanc
 	}
 
 	if shouldGenNixyArtifacts {
-		scripts = append(scripts,
-			// INFO: overwriting config hash file is important, as it ensures nixy re-evaluates incase of an errored previous shell execution
-			fmt.Sprintf("printf '' > %s", n.fsPaths.GeneratedConfigHashFilePath),
-			// [READ more about nix print-dev-env](https://nix.dev/manual/nix/2.18/command-ref/new-cli/nix3-print-dev-env)
-			fmt.Sprintf("nix print-dev-env path:. > %s", shellEnvFileName),
-			fmt.Sprintf("printf '%s' > %s", n.sha256Sum, n.fsPaths.GeneratedConfigHashFilePath),
-		)
+		scripts = append(scripts, n.updateConfigHash())
 	}
 
-	scripts = append(scripts, fmt.Sprintf("source %s", shellEnvFileName))
-	scripts = append(scripts, "exec "+program)
+	scripts = append(scripts,
+		fmt.Sprintf("source %s", shellEnvFileName),
+		// program,
+		"exec "+program,
+	)
 
-	nixShell := []string{
-		"--extra-experimental-features",
-		"nix-command",
-		"shell",
-		fmt.Sprintf("nixpkgs/%s#bash", n.NixPkgs["default"]),
-		"--command",
-		"bash",
-		"-c",
-		strings.Join(scripts, "\n"),
-	}
+	nixShell := n.buildNixShellCommand(scripts)
 
 	fastlog.Debug("calling executor exec ")
 	cmd, err := n.Executor.Exec(appCtx, "nix", nixShell...)
@@ -169,7 +180,6 @@ ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenanc
 	cmd.Env = append(cmd.Env,
 		"NIXY_SHELL=true",
 	)
-	// cmd.Env = append(cmd.Env, n.Env.ToEnviron(appCtx)...)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
@@ -186,12 +196,7 @@ func (n *Nixy) Shell(ctx *app.Context, program string) error {
 		return err
 	}
 
-	nixyGitRoot := ctx.PWD
-	gitRoot, ok := GetGitRootForWorkspace(ctx, ctx.PWD)
-	if ok {
-		nixyGitRoot = gitRoot
-	}
-	cmd.Env = append(cmd.Env, "NIXY_GIT_ROOT="+nixyGitRoot)
+	n.attachGitRootEnv(ctx, cmd)
 
 	fastlog.Debug("Executing", "command", cmd.String())
 	defer func() {

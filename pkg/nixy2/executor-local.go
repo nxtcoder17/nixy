@@ -23,5 +23,8 @@ func (n *Nixy) NewLocalExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor 
 }
 
 func (d *localExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (*exec.Cmd, error) {
+	// Nixy is a developer CLI tool that inherently runs commands defined by the user.
+	// The commands and args passed here are constructed by the Nixy tool itself.
+	// #nosec G204
 	return exec.CommandContext(appCtx.Context, cmd, args...), nil
 }

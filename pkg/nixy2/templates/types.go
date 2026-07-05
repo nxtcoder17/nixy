@@ -98,6 +98,8 @@ type WorkspaceFlakeParams struct {
 	OSArch string
 
 	EnvVars map[string]string
+
+	OnShellEnterScriptPath string
 }
 
 type WorkspaceFlakePackgeBuild struct {

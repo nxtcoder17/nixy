@@ -53,6 +53,8 @@ func (n *Nixy) NewDockerExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 		}
 	}
 
+	fastlog.Debug("docker executor", "ports", d.Ports, "n.dockerModeConfig", n.DockerModeConfig)
+
 	return d
 }
 
@@ -177,6 +179,10 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 		"-e", "NIX_CONFIG=ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenance com.apple.quarantine com.apple.macl com.apple.metadata:kMDItemWhereFroms com.apple.metadata:_kMDItemUserTags com.apple.FinderInfo com.apple.lastuseddate#PS",
 
 		"-v", addMount(appCtx.NixyExecutableBinPath, "/bin/nixy", "ro", "z"),
+	}
+
+	for _, p := range d.Ports {
+		dockerArgs = append(dockerArgs, "-p", p.HostPort+":"+p.ContainerPort)
 	}
 
 	nixyShellEnvExpander := func(key string) string {
