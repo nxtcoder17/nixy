@@ -9,6 +9,7 @@ import (
 
 	"github.com/nxtcoder17/fastlog"
 	"github.com/nxtcoder17/nixy/internal/app"
+	fn "github.com/nxtcoder17/nixy/pkg/functions"
 )
 
 type DockerModeConfig struct {
@@ -37,7 +38,7 @@ func (n *Nixy) NewDockerExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 		NixStoreDockerVolume: "nixy-nix-store",
 		HomeDirDockerVolume:  "nixy-user-home",
 		Mounts:               n.Mounts,
-		Env:                  n.Env,
+		Env:                  fn.MapMerge(n.Env, commonExecutorEnv(appCtx)),
 	}
 
 	for _, v := range n.DockerModeConfig.Ports {

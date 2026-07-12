@@ -8,3 +8,10 @@ import (
 type Executor interface {
 	Exec(appCtx *app.Context, command string, args ...string) (*exec.Cmd, error)
 }
+
+func commonExecutorEnv(appCtx *app.Context) map[string]string {
+	return map[string]string{
+		"NIXY_MODE":  appCtx.NixyMode.Str(),
+		"NIXY_SHELL": "true",
+	}
+}

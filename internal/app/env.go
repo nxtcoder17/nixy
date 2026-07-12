@@ -8,6 +8,10 @@ import (
 
 type NixyMode string
 
+func (nm NixyMode) Str() string {
+	return string(nm)
+}
+
 const (
 	LocalMode          NixyMode = "local"
 	LocalIgnoreEnvMode NixyMode = "local-ignore-env"

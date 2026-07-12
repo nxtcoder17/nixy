@@ -177,9 +177,6 @@ func (n *Nixy) nixShellExec(appCtx *app.Context, program string) (*exec.Cmd, err
 	}
 
 	cmd.Env = append(cmd.Env, os.Environ()...)
-	cmd.Env = append(cmd.Env,
-		"NIXY_SHELL=true",
-	)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin

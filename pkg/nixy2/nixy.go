@@ -40,6 +40,7 @@ type NixyYAML struct {
 type ColimaModeConfig struct {
 	CPU    int      `yaml:"cpu,omitempty"`
 	Memory int      `yaml:"memory,omitempty"`
+	Disk   int      `yaml:"disk,omitempty"`
 	Ports  []string `yaml:"ports,omitempty"`
 }
 

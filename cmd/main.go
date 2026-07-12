@@ -65,6 +65,7 @@ func main() {
 			actionShellHook(),
 			actionShell(),
 			actionBuild(),
+			actionColima(),
 		},
 
 		Suggest: true,
@@ -253,6 +254,87 @@ func actionBuild() *cli.Command {
 			}
 
 			return nil
+		},
+	}
+}
+
+func actionColima() *cli.Command {
+	return &cli.Command{
+		Name:    "colima",
+		Suggest: true,
+		Commands: []*cli.Command{
+			actionColimaStop(),
+			actionColimaSSH(),
+		},
+	}
+}
+
+func actionColimaStop() *cli.Command {
+	return &cli.Command{
+		Name:  "stop",
+		Usage: "stop the Colima VM associated with the project",
+		Action: func(ctx context.Context, c *cli.Command) error {
+			appCtx, err := app.NewContext(ctx, Version)
+			if err != nil {
+				return err
+			}
+
+			n, err := loadFromNixyfile(appCtx, c)
+			if err != nil {
+				n = &nixy2.Nixy{}
+			}
+
+			fsPaths, err := nixy2.CreateFSPaths(appCtx)
+			if err != nil {
+				return err
+			}
+
+			executor := n.NewColimaExecutor(appCtx, fsPaths)
+			if colimaExec, ok := executor.(interface {
+				Stop(appCtx *app.Context) error
+			}); ok {
+				return colimaExec.Stop(appCtx)
+			}
+
+			return fmt.Errorf("current execution mode is not Colima")
+		},
+	}
+}
+
+func actionColimaSSH() *cli.Command {
+	return &cli.Command{
+		Name:  "ssh",
+		Usage: "SSH into the Colima VM associated with the project",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "raw",
+				Usage: "print the raw SSH command to stdout instead of running it",
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			appCtx, err := app.NewContext(ctx, Version)
+			if err != nil {
+				return err
+			}
+
+			n, err := loadFromNixyfile(appCtx, c)
+			if err != nil {
+				n = &nixy2.Nixy{}
+			}
+
+			fsPaths, err := nixy2.CreateFSPaths(appCtx)
+			if err != nil {
+				return err
+			}
+
+			executor := n.NewColimaExecutor(appCtx, fsPaths)
+			if colimaExec, ok := executor.(interface {
+				SSH(appCtx *app.Context, raw bool) error
+			}); ok {
+				return colimaExec.SSH(appCtx, c.Bool("raw"))
+			}
+
+			return fmt.Errorf("current execution mode is not Colima")
 		},
 	}
 }

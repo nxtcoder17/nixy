@@ -212,7 +212,6 @@
             {{- end }}
 
             if [ -e "{{$onShellEnterHookPath}}" ]; then
-              echo "Sourcing shell hook path {{$onShellEnterHookPath}}"
               source "{{$onShellEnterHookPath}}"
             fi
 
