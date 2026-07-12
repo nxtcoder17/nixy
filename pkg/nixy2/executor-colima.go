@@ -189,6 +189,12 @@ mkdir -p ~/.config/nix
 if ! grep -q "experimental-features" ~/.config/nix/nix.conf 2>/dev/null; then
   echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
 fi
+
+if ! command -v nixy >/dev/null; then
+  echo "nixy not found in VM. Installing..."
+  curl -L0 https://github.com/nxtcoder17/nixy/releases/download/v1.6.1-master/nixy-linux-$NIXY_ARCH > ~/.local/bin/nixy
+  chmod +x ~/.local/bin/nixy
+fi
 `
 	cmd := exec.CommandContext(appCtx.Context, "colima", "ssh", "-p", c.profileName, "--", "sh", "-c", checkNixScript)
 	cmd.Stdout = os.Stdout

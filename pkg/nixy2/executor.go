@@ -3,6 +3,7 @@ package nixy2
 import (
 	"github.com/nxtcoder17/nixy/internal/app"
 	"os/exec"
+	"runtime"
 )
 
 type Executor interface {
@@ -13,5 +14,6 @@ func commonExecutorEnv(appCtx *app.Context) map[string]string {
 	return map[string]string{
 		"NIXY_MODE":  appCtx.NixyMode.Str(),
 		"NIXY_SHELL": "true",
+		"NIXY_ARCH":  runtime.GOARCH,
 	}
 }
