@@ -55,6 +55,34 @@ func GenColimaProfileName(pwd string) string {
 	return fmt.Sprintf("nixy-%s", profileHash)
 }
 
+func colimaHome() (string, error) {
+	if home := os.Getenv("COLIMA_HOME"); home != "" {
+		return home, nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".colima"), nil
+}
+
+func (c *colimaExecutor) colimaConfigDir() (string, error) {
+	home, err := colimaHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, c.profileName), nil
+}
+
+func (c *colimaExecutor) sshConfigPath() (string, error) {
+	home, err := colimaHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "_lima", "colima-"+c.profileName, "ssh.config"), nil
+}
+
 func (n *Nixy) NewColimaExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor {
 	profileName := GenColimaProfileName(appCtx.PWD)
 
@@ -111,58 +139,55 @@ func (n *Nixy) NewColimaExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 
 func (c *colimaExecutor) EnsureColimaVM(appCtx *app.Context) error {
 	statusCmd := exec.CommandContext(appCtx.Context, "colima", "status", "-p", c.profileName)
-	if err := statusCmd.Run(); err != nil {
-		// VM is not running, start it
-		fastlog.Info("Starting Colima VM profile...", "profile", c.profileName)
+	vmRunning := statusCmd.Run() == nil
 
-		// Create mounts list
-		var mounts []colimaConfigMount
+	var mounts []colimaConfigMount
+	mounts = append(mounts, colimaConfigMount{
+		Location: appCtx.PWD,
+		Writable: true,
+	})
+	for _, m := range c.Mounts {
 		mounts = append(mounts, colimaConfigMount{
-			Location: appCtx.PWD,
-			Writable: true,
+			Location:   m.Source,
+			MountPoint: m.Destination,
+			Writable:   !m.ReadOnly,
 		})
-		for _, m := range c.Mounts {
-			mounts = append(mounts, colimaConfigMount{
-				Location:   m.Source,
-				MountPoint: m.Destination,
-				Writable:   !m.ReadOnly,
-			})
-		}
+	}
 
-		cfg := colimaConfig{
-			CPU:          c.CPU,
-			Disk:         c.Disk,
-			Memory:       c.Memory,
-			Runtime:      "docker",
-			Mounts:       mounts,
-			PortForwards: c.Ports,
-			Env:          c.Env,
-		}
+	cfg := colimaConfig{
+		CPU:          c.CPU,
+		Disk:         c.Disk,
+		Memory:       c.Memory,
+		Runtime:      "docker",
+		Mounts:       mounts,
+		PortForwards: c.Ports,
+		Env:          c.Env,
+	}
 
-		b, err := yaml.Marshal(cfg)
-		if err != nil {
-			return fmt.Errorf("failed to marshal colima config: %w", err)
-		}
+	b, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal colima config: %w", err)
+	}
+	if err := os.WriteFile(c.colimaConfig, b, 0644); err != nil {
+		return fmt.Errorf("failed to write colima config to %s: %w", c.colimaConfig, err)
+	}
 
-		if err := os.WriteFile(c.colimaConfig, b, 0644); err != nil {
-			return fmt.Errorf("failed to write colima config to %s: %w", c.colimaConfig, err)
-		}
+	targetConfigDir, err := c.colimaConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(targetConfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create colima config dir: %w", err)
+	}
 
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		targetConfigDir := filepath.Join(homeDir, ".config", "colima", c.profileName)
-		if err := os.MkdirAll(targetConfigDir, 0755); err != nil {
-			return fmt.Errorf("failed to create colima config dir: %w", err)
-		}
+	targetConfigPath := filepath.Join(targetConfigDir, "colima.yaml")
+	_ = os.Remove(targetConfigPath)
+	if err := os.Symlink(c.colimaConfig, targetConfigPath); err != nil {
+		return fmt.Errorf("failed to symlink colima config: %w", err)
+	}
 
-		targetConfigPath := filepath.Join(targetConfigDir, "colima.yaml")
-		_ = os.Remove(targetConfigPath) // Remove if it exists or is a broken symlink
-		if err := os.Symlink(c.colimaConfig, targetConfigPath); err != nil {
-			return fmt.Errorf("failed to symlink colima config: %w", err)
-		}
-
+	if !vmRunning {
+		fastlog.Info("Starting Colima VM profile...", "profile", c.profileName)
 		cmd := exec.CommandContext(appCtx.Context, "colima", "start", c.profileName)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -172,6 +197,14 @@ func (c *colimaExecutor) EnsureColimaVM(appCtx *app.Context) error {
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to start Colima VM profile %s: %w", c.profileName, err)
 		}
+	}
+
+	sshConfigPath, err := c.sshConfigPath()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(sshConfigPath); err != nil {
+		return fmt.Errorf("Colima SSH config not found at %s: %w", sshConfigPath, err)
 	}
 
 	// Now check and install Nix inside the VM if not present
@@ -192,6 +225,7 @@ fi
 
 if ! command -v nixy >/dev/null; then
   echo "nixy not found in VM. Installing..."
+  mkdir -p ~/.local/bin/
   curl -L0 https://github.com/nxtcoder17/nixy/releases/download/v1.6.1-master/nixy-linux-$NIXY_ARCH > ~/.local/bin/nixy
   chmod +x ~/.local/bin/nixy
 fi
@@ -215,11 +249,10 @@ func (c *colimaExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 		return nil, err
 	}
 
-	homeDir, err := os.UserHomeDir()
+	sshConfigPath, err := c.sshConfigPath()
 	if err != nil {
 		return nil, err
 	}
-	sshConfigPath := filepath.Join(homeDir, ".config", "colima", "_lima", "colima-"+c.profileName, "ssh.config")
 
 	var sshCmd []string
 	if os.Getenv("TERM") == "xterm-kitty" {
@@ -281,26 +314,25 @@ func (c *colimaExecutor) SSH(appCtx *app.Context, raw bool) error {
 		}
 	}
 
-	homeDir, err := os.UserHomeDir()
+	sshConfigPath, err := c.sshConfigPath()
 	if err != nil {
 		return err
 	}
-	sshConfigPath := filepath.Join(homeDir, ".config", "colima", "_lima", "colima-"+c.profileName, "ssh.config")
 
 	if raw {
 		fmt.Printf("ssh -F %s lima-colima-%s\n", sshConfigPath, c.profileName)
 		return nil
 	}
 
-	var sshCmd []string
-	if os.Getenv("TERM") == "xterm-kitty" {
-		if _, err := exec.LookPath("kitty"); err == nil {
-			sshCmd = []string{"kitty", "+kitten", "ssh"}
+	sshCmd := func() []string {
+		if os.Getenv("TERM") == "xterm-kitty" {
+			if _, err := exec.LookPath("kitty"); err == nil {
+				return []string{"kitty", "+kitten", "ssh"}
+			}
 		}
-	}
-	if len(sshCmd) == 0 {
-		sshCmd = []string{"ssh"}
-	}
+
+		return []string{"ssh"}
+	}()
 
 	sshArgs := append(sshCmd,
 		"-t",

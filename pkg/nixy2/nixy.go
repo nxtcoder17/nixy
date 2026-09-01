@@ -250,6 +250,16 @@ func mergeNixyYAMLs(yamls ...*NixyYAML) *NixyYAML {
 		n.Mounts = append(n.Mounts, y.Mounts...)
 
 		n.DockerModeConfig.Ports = append(n.DockerModeConfig.Ports, y.DockerModeConfig.Ports...)
+		n.ColimaModeConfig.Ports = append(n.ColimaModeConfig.Ports, y.ColimaModeConfig.Ports...)
+		if y.ColimaModeConfig.CPU != 0 {
+			n.ColimaModeConfig.CPU = y.ColimaModeConfig.CPU
+		}
+		if y.ColimaModeConfig.Memory != 0 {
+			n.ColimaModeConfig.Memory = y.ColimaModeConfig.Memory
+		}
+		if y.ColimaModeConfig.Disk != 0 {
+			n.ColimaModeConfig.Disk = y.ColimaModeConfig.Disk
+		}
 	}
 
 	n.OnShellEnter = strings.Join(shellEnterHooks, "\n")
