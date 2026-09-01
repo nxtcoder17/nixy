@@ -42,7 +42,7 @@ func init() {
 			b, err := json.Marshal(v)
 			return string(b), err
 		},
-		"squote": func(str ...interface{}) string {
+		"squote": func(str ...any) string {
 			out := make([]string, 0, len(str))
 			for _, s := range str {
 				if s != nil {
@@ -98,6 +98,8 @@ type WorkspaceFlakeParams struct {
 	OSArch string
 
 	EnvVars map[string]string
+
+	OnShellEnterScriptPath string
 }
 
 type WorkspaceFlakePackgeBuild struct {
