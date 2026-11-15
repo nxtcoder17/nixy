@@ -1,10 +1,11 @@
 name: Build Nixy Image
 
 # Publishes ghcr.io/nxtcoder17/nixy (nix runtime with the nixy binary baked
-# in). It follows nixy's own codebase, not the repo flake: the flake files
-# only provide the builder's go toolchain (nix develop), so they are not a
-# trigger — a flake-only change lands in the image the next time nixy code
-# changes. The nix runtime base comes from ghcr.io/nxtcoder17/nix:latest.
+# in). It follows nixy's own codebase (go source / build inputs) and the repo
+# flake: flake.nix/flake.lock changes republish the nix runtime base
+# (ghcr.io/nxtcoder17/nix:latest) and this image is built FROM it, so it must
+# rebuild too, keeping nixy:latest's runtime in sync with the documented nix
+# image. `v*` release tags publish the release-specific image tag.
 on:
   workflow_dispatch:
 
@@ -21,7 +22,18 @@ on:
       - 'Runfile.yml'
       - 'Dockerfile.nixy'
       - '.dockerignore'
+      - 'flake.nix'
+      - 'flake.lock'
       - '.github/workflows/nixy-image.yml'
+    tags:
+      - 'v*'
+
+# one run at a time per ref; a newer run cancels an older in-flight one, so
+# an older run can never finish after a newer one and overwrite the shared
+# `latest` manifest with stale contents
+concurrency:
+  group: nixy-image-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -52,11 +64,13 @@ jobs:
       - uses: nxtcoder17/actions/metadata@main
         id: meta
 
+      # arch tags are keyed by the commit sha (immutable), so a manifest can
+      # never combine images from different runs
       - name: build and push image
         run: |+
           docker buildx build -f ./Dockerfile.nixy \
             --build-arg VERSION="${{ steps.meta.outputs.version }}" \
-            --tag "ghcr.io/nxtcoder17/nixy:${{ steps.meta.outputs.sanitized_ref }}-${{ matrix.arch }}" \
+            --tag "ghcr.io/nxtcoder17/nixy:${{ steps.meta.outputs.commit_slug }}-${{ matrix.arch }}" \
             --cache-to type=registry,ref="ghcr.io/nxtcoder17/nixy:buildx-cache-${{ matrix.arch }}",mode=max,compression=zstd,compression-level=13,force-compression=true \
             --cache-from type=registry,ref="ghcr.io/nxtcoder17/nixy:buildx-cache-${{ matrix.arch }}" \
             --push \
@@ -79,27 +93,38 @@ jobs:
 
       - name: push multi-arch manifest
         env:
-          NIXY_VERSION: ${{ steps.meta.outputs.sanitized_ref }}
+          SHA_REF: ${{ steps.meta.outputs.commit_slug }}
+          VERSION_TAG: ${{ steps.meta.outputs.is_tag == 'true' && steps.meta.outputs.version || '' }}
         run: |+
           set -euo pipefail
 
-          for tag in "$NIXY_VERSION" latest; do
-            docker manifest create "ghcr.io/nxtcoder17/nixy:$tag" \
-              --amend "ghcr.io/nxtcoder17/nixy:${NIXY_VERSION}-amd64" \
-              --amend "ghcr.io/nxtcoder17/nixy:${NIXY_VERSION}-arm64"
-            docker manifest push "ghcr.io/nxtcoder17/nixy:$tag"
+          IMAGE="ghcr.io/nxtcoder17/nixy"
+          tags=("$SHA_REF" latest)
+          if [ -n "$VERSION_TAG" ]; then
+            tags+=("$VERSION_TAG")
+          fi
+
+          for tag in "${tags[@]}"; do
+            docker manifest create "$IMAGE:$tag" \
+              --amend "$IMAGE:${SHA_REF}-amd64" \
+              --amend "$IMAGE:${SHA_REF}-arm64"
+            docker manifest push "$IMAGE:$tag"
           done
 
       - name: print pull commands
         env:
-          NIXY_VERSION: ${{ steps.meta.outputs.sanitized_ref }}
+          SHA_REF: ${{ steps.meta.outputs.commit_slug }}
+          VERSION_TAG: ${{ steps.meta.outputs.is_tag == 'true' && steps.meta.outputs.version || '' }}
         run: |+
           {
             echo "## Published image (multi-arch)"
             echo
             echo '```bash'
             echo "# nix runtime with the nixy binary baked in"
-            echo "docker pull ghcr.io/nxtcoder17/nixy:$NIXY_VERSION"
+            echo "docker pull ghcr.io/nxtcoder17/nixy:$SHA_REF"
             echo "docker pull ghcr.io/nxtcoder17/nixy:latest"
+            if [ -n "$VERSION_TAG" ]; then
+              echo "docker pull ghcr.io/nxtcoder17/nixy:$VERSION_TAG"
+            fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

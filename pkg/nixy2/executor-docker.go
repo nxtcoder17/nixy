@@ -60,47 +60,59 @@ func (n *Nixy) NewDockerExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 }
 
 func (d *dockerExecutor) createNixVolume(appCtx *app.Context) error {
-	hasNewVolume := false
-
-	if err := exec.CommandContext(appCtx.Context, "docker", "volume", "inspect", d.NixStoreDockerVolume).Run(); err != nil {
-		hasNewVolume = true
-		if err := exec.CommandContext(appCtx.Context, "docker", "volume", "create", d.NixStoreDockerVolume).Run(); err != nil {
-			return err
+	for _, volume := range []string{d.NixStoreDockerVolume, d.HomeDirDockerVolume} {
+		if err := exec.CommandContext(appCtx.Context, "docker", "volume", "inspect", volume).Run(); err != nil {
+			if err := exec.CommandContext(appCtx.Context, "docker", "volume", "create", volume).Run(); err != nil {
+				return err
+			}
 		}
 	}
 
-	if err := exec.CommandContext(appCtx.Context, "docker", "volume", "inspect", d.HomeDirDockerVolume).Run(); err != nil {
-		hasNewVolume = true
-		if err := exec.CommandContext(appCtx.Context, "docker", "volume", "create", d.HomeDirDockerVolume).Run(); err != nil {
-			return err
-		}
-	}
+	uid := os.Getuid()
+	gid := os.Getgid()
 
-	if hasNewVolume {
-		uid := os.Getuid()
-		gid := os.Getgid()
+	// docker only seeds an EMPTY volume from the image at mount time. An
+	// existing volume (created by an older runtime image) masks the image's
+	// /nix store, so the image's /bin symlinks into the store would dangle.
+	// So the init container always runs: with the volume mounted at /nix-vol
+	// the image's own store at /nix stays visible, and the volume is brought
+	// in sync with it whenever its recorded runtime doesn't match the image.
+	initScript := fmt.Sprintf(`
+set -eu
 
-		initScript := fmt.Sprintf(`
-mkdir -p /nix/store /nix/var/nix /home/nixy/.config/nix
+runtime="$(readlink -f "$(command -v nix)" 2>/dev/null || echo none)"
+stored="$(cat /nix-vol/.nixy-runtime 2>/dev/null || true)"
+
+if [ "$runtime" != "$stored" ]; then
+  mkdir -p /nix-vol/store /nix-vol/var/nix
+  # store paths are immutable, so merging with an older volume is safe
+  cp -a /nix/store/. /nix-vol/store/
+  echo "$runtime" > /nix-vol/.nixy-runtime
+  chown -R %d:%d /nix-vol
+fi
+
+# keep the store dirs writable for the executor's --user uid:gid
+chown %d:%d /nix-vol /nix-vol/store /nix-vol/var /nix-vol/var/nix
+
+mkdir -p /home/nixy/.config/nix
 if [ ! -f /home/nixy/.config/nix/nix.conf ]; then
   echo "experimental-features = nix-command flakes" > /home/nixy/.config/nix/nix.conf
 fi
-chown -R %d:%d /nix /home
-`, uid, gid)
+chown -R %d:%d /home
+`, uid, gid, uid, gid, uid, gid)
 
-		out, err := exec.CommandContext(appCtx.Context, "docker", "run", "--rm",
-			"--user", "0:0",
-			"-v", d.HomeDirDockerVolume+":"+"/home:z",
-			"-v", d.NixStoreDockerVolume+":"+"/nix:z",
-			appCtx.NixyDockerModeImage,
-			"sh", "-c", initScript,
-		).CombinedOutput()
+	out, err := exec.CommandContext(appCtx.Context, "docker", "run", "--rm",
+		"--user", "0:0",
+		"-v", d.HomeDirDockerVolume+":"+"/home:z",
+		"-v", d.NixStoreDockerVolume+":"+"/nix-vol:z",
+		appCtx.NixyDockerModeImage,
+		"sh", "-c", initScript,
+	).CombinedOutput()
 
-		fastlog.Debug("create volume output", "text", string(out))
-		if err != nil {
-			fastlog.Debug("create volume output", "text", string(out), "err", err)
-			return err
-		}
+	fastlog.Debug("create volume output", "text", string(out))
+	if err != nil {
+		fastlog.Debug("create volume output", "text", string(out), "err", err)
+		return err
 	}
 
 	return nil
