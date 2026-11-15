@@ -14,15 +14,19 @@ import (
 
 type DockerModeConfig struct {
 	Ports []string `yaml:"ports,omitempty"`
+
+	// Platform selects the container platform; unset uses Docker's default.
+	Platform *string `yaml:"platform,omitempty"`
 }
 
 type dockerExecutor struct {
 	NixStoreDockerVolume string
 	HomeDirDockerVolume  string
 
-	Mounts []NixyMount
-	Env    map[string]string
-	Ports  []containerPort
+	Mounts   []NixyMount
+	Env      map[string]string
+	Ports    []containerPort
+	Platform *string
 }
 
 type containerPort struct {
@@ -39,6 +43,7 @@ func (n *Nixy) NewDockerExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 		HomeDirDockerVolume:  "nixy-user-home",
 		Mounts:               n.Mounts,
 		Env:                  fn.MapMerge(n.Env, commonExecutorEnv(appCtx)),
+		Platform:             n.DockerModeConfig.Platform,
 	}
 
 	for _, v := range n.DockerModeConfig.Ports {
@@ -57,6 +62,14 @@ func (n *Nixy) NewDockerExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 	fastlog.Debug("docker executor", "ports", d.Ports, "n.dockerModeConfig", n.DockerModeConfig)
 
 	return d
+}
+
+func (d *dockerExecutor) platform() string {
+	if d.Platform == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(*d.Platform)
 }
 
 func (d *dockerExecutor) createNixVolume(appCtx *app.Context) error {
@@ -101,13 +114,21 @@ fi
 chown -R %d:%d /home
 `, uid, gid, uid, gid, uid, gid)
 
-	out, err := exec.CommandContext(appCtx.Context, "docker", "run", "--rm",
+	dockerArgs := []string{
+		"run", "--rm",
 		"--user", "0:0",
+	}
+	if platform := d.platform(); platform != "" {
+		dockerArgs = append(dockerArgs, "--platform", platform)
+	}
+	dockerArgs = append(dockerArgs,
 		"-v", d.HomeDirDockerVolume+":"+"/home:z",
 		"-v", d.NixStoreDockerVolume+":"+"/nix-vol:z",
 		appCtx.NixyDockerModeImage,
 		"sh", "-c", initScript,
-	).CombinedOutput()
+	)
+
+	out, err := exec.CommandContext(appCtx.Context, "docker", dockerArgs...).CombinedOutput()
 
 	fastlog.Debug("create volume output", "text", string(out))
 	if err != nil {
@@ -134,9 +155,14 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 	dockerCmd := "docker"
 	containerUsername := "nixy"
 	containerHome := "/home/" + containerUsername
+	platform := d.platform()
 
-	// Unique container name for the workspace
-	containerName := fmt.Sprintf("nixy-%x", sha256.Sum256([]byte(appCtx.PWD)))[:17]
+	// Unique container name for the workspace and selected platform
+	containerKey := appCtx.PWD
+	if platform != "" {
+		containerKey += "|platform=" + platform
+	}
+	containerName := fmt.Sprintf("nixy-%x", sha256.Sum256([]byte(containerKey)))[:17]
 
 	// Check if the container is already running
 	isRunning := false
@@ -192,6 +218,10 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 		"-e", "NIX_CONFIG=ignored-acls = security.csm security.selinux system.nfs4_acl com.apple.provenance com.apple.quarantine com.apple.macl com.apple.metadata:kMDItemWhereFroms com.apple.metadata:_kMDItemUserTags com.apple.FinderInfo com.apple.lastuseddate#PS",
 
 		"-v", addMount(appCtx.NixyExecutableBinPath, "/bin/nixy", "ro", "z"),
+	}
+
+	if platform != "" {
+		dockerArgs = append(dockerArgs, "--platform", platform)
 	}
 
 	for _, p := range d.Ports {

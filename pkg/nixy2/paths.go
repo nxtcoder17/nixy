@@ -17,9 +17,9 @@ type FSPaths struct {
 	NixStoreDir string
 	UserHomeDir string
 
-	GeneratedArtifactsDir       string
-	GeneratedNixConfigFilePath  string
-	GeneratedConfigHashFilePath string
+	GeneratedArtifactsDir         string
+	GeneratedNixConfigFilePath    string
+	GeneratedConfigHashFilePath   string
 	GeneratedNixyYAMLPath         string
 	GeneratedFlakeNixPath         string
 	GeneratedHooksDir             string

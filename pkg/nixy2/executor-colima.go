@@ -176,8 +176,8 @@ func (c *colimaExecutor) EnsureColimaVM(appCtx *app.Context) error {
 	})
 	for _, m := range c.Mounts {
 		mounts = append(mounts, colimaConfigMount{
-			Location:   m.Source,
-			MountPoint: m.Destination,
+			Location:   os.ExpandEnv(m.Source),
+			MountPoint: os.ExpandEnv(m.Destination),
 			Writable:   !m.ReadOnly,
 		})
 	}
