@@ -172,6 +172,20 @@ func normalizePackages(appCtx *app.Context, nw *NixyYAML, parser *yamlAST.Parser
 	return hasPkgUpdates, nil
 }
 
+// setColimaArch points package resolution at the arch the VM will run.
+func setColimaArch(appCtx *app.Context, arch string) {
+	if appCtx.NixyMode != app.ColimaMode {
+		return
+	}
+
+	switch arch = strings.ToLower(strings.TrimSpace(arch)); arch {
+	case "", "host":
+		appCtx.ColimaARCH = ""
+	default:
+		appCtx.ColimaARCH = string(ParseCPUArch(arch))
+	}
+}
+
 func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyYAML, error) {
 	b, parser, err := readNixyFile(file)
 	if err != nil {
@@ -182,6 +196,8 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyYAML, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	setColimaArch(appCtx, nw.ColimaModeConfig.Arch)
 
 	nw.sha256Sum = configHash(appCtx, b)
 
@@ -273,11 +289,6 @@ func mergeNixyYAMLs(yamls ...*NixyYAML) *NixyYAML {
 }
 
 func LoadFromFile(appCtx *app.Context, f string) (*Nixy, error) {
-	fsPaths, err := CreateFSPaths(appCtx)
-	if err != nil {
-		return nil, err
-	}
-
 	n, err := func() (*Nixy, error) {
 		projectNixy, err := parseAndSyncNixyFile(appCtx, f)
 		if err != nil {
@@ -296,23 +307,27 @@ func LoadFromFile(appCtx *app.Context, f string) (*Nixy, error) {
 
 			return &Nixy{
 				NixyYAML:  mergeNixyYAMLs(preloadNixy, projectNixy),
-				fsPaths:   fsPaths,
 				sha256Sum: preloadNixy.sha256Sum + ";" + projectNixy.sha256Sum,
-				Executor:  nil,
 			}, nil
 		}
 
 		return &Nixy{
 			NixyYAML:  projectNixy,
-			fsPaths:   fsPaths,
 			sha256Sum: projectNixy.sha256Sum,
-			Executor:  nil,
 		}, nil
 	}()
 
 	if err != nil {
 		return nil, err
 	}
+
+	setColimaArch(appCtx, n.ColimaModeConfig.Arch)
+
+	fsPaths, err := CreateFSPaths(appCtx)
+	if err != nil {
+		return nil, err
+	}
+	n.fsPaths = fsPaths
 
 	if err := n.syncToDisk(fsPaths.GeneratedNixyYAMLPath, n.NixyYAML); err != nil {
 		return nil, err

@@ -162,8 +162,9 @@ packages:
     # Automatically detects archive type and extracts
 ```
 
-The source is picked by matching the current `<os>/<arch>` key, so multiple
-platforms can be listed side by side.
+The source is picked by matching the `<os>/<arch>` where the shell runs: the
+host in `local` mode, and the Linux container or VM in `docker`/`colima` mode.
+Multiple platforms can be listed side by side.
 
 ### 🔧 Build System
 Define reproducible runtime bundles that can be used outside `nixy shell` (for example in Docker images):

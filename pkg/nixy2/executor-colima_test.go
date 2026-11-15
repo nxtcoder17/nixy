@@ -67,6 +67,13 @@ func TestNewColimaExecutorGeneratesConfiguredYAML(t *testing.T) {
 				Disk:   80,
 				Ports:  []string{"8080:80", "3000"},
 			},
+			Mounts: []NixyMount{
+				{
+					Source:      "$HOME/.claude/skills",
+					Destination: "$HOME/.agents/skills",
+					ReadOnly:    true,
+				},
+			},
 		},
 	}
 	c := n.NewColimaExecutor(&app.Context{Env: &app.Env{}, PWD: tmpDir}, &FSPaths{GeneratedColimaConfigFilePath: configPath}).(*colimaExecutor)
@@ -74,6 +81,8 @@ func TestNewColimaExecutorGeneratesConfiguredYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	home := filepath.Join(tmpDir, "home")
+	t.Setenv("HOME", home)
 	t.Setenv("COLIMA_HOME", filepath.Join(tmpDir, "colima"))
 	t.Setenv("PATH", filepath.Join(tmpDir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 	binDir := filepath.Join(tmpDir, "bin")
@@ -103,6 +112,17 @@ func TestNewColimaExecutorGeneratesConfiguredYAML(t *testing.T) {
 	}
 	if len(got.PortForwards) != 2 || got.PortForwards[0].HostPort != 8080 || got.PortForwards[0].GuestPort != 80 || got.PortForwards[1].HostPort != 3000 || got.PortForwards[1].GuestPort != 3000 {
 		t.Fatalf("generated ports = %+v", got.PortForwards)
+	}
+	if len(got.Mounts) != 2 {
+		t.Fatalf("generated mounts = %+v", got.Mounts)
+	}
+	wantMount := colimaConfigMount{
+		Location:   filepath.Join(home, ".claude/skills"),
+		MountPoint: filepath.Join(home, ".agents/skills"),
+		Writable:   false,
+	}
+	if got.Mounts[1] != wantMount {
+		t.Errorf("generated mount = %+v, want %+v", got.Mounts[1], wantMount)
 	}
 }
 

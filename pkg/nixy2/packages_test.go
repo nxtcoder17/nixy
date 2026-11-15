@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/nxtcoder17/nixy/internal/app"
 	yamlAST "github.com/nxtcoder17/nixy/pkg/yaml-ast"
 	"gopkg.in/yaml.v3"
 )
@@ -130,6 +131,54 @@ func Test_parsePackage(t *testing.T) {
 				t.Errorf("Assertion Failed \n\tgot: %v\n\texpected: %v", np, tt.want)
 			}
 		})
+	}
+}
+
+func TestGenWorkspaceFlakeParams_DockerModeOnDarwin_PicksLinuxArm64Source(t *testing.T) {
+	appCtx := &app.Context{
+		Env:        &app.Env{NixyMode: app.DockerMode},
+		SystemOS:   "darwin",
+		SystemARCH: "arm64",
+	}
+
+	params := WorkspaceFlakeGenParams{
+		NixPkgs:          map[string]string{"default": "abc123"},
+		WorkspaceDirPath: "/workspace",
+		Packages: []*Package{
+			{
+				URLPackage: &URLPackage{
+					Name: "opencode",
+					Sources: map[string]PackageURLAndSHA{
+						"linux/amd64": {
+							URL:    "https://example.com/opencode-linux-amd64.tar.gz",
+							SHA256: "amd64hash",
+						},
+						"linux/arm64": {
+							URL:    "https://example.com/opencode-linux-arm64.tar.gz",
+							SHA256: "arm64hash",
+						},
+					},
+				},
+			},
+		},
+		FSPaths: &FSPaths{
+			GeneratedHookOnShellEnterPath: "/workspace/.nixy/hooks/shell-enter.sh",
+		},
+	}
+
+	got, err := genWorkspaceFlakeParams(appCtx, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got.URLPackages) != 1 {
+		t.Fatalf("expected 1 URL package, got %d", len(got.URLPackages))
+	}
+	if got.URLPackages[0].URL != "https://example.com/opencode-linux-arm64.tar.gz" {
+		t.Errorf("selected URL = %q, want the linux/arm64 source", got.URLPackages[0].URL)
+	}
+	if got.URLPackages[0].Sha256 != "arm64hash" {
+		t.Errorf("selected SHA256 = %q, want %q", got.URLPackages[0].Sha256, "arm64hash")
 	}
 }
 
