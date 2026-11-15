@@ -1,0 +1,55 @@
+# ghcr.io/nxtcoder17/nixy — nix runtime image with the nixy binary baked in.
+#
+# `docker run --rm -it ghcr.io/nxtcoder17/nixy nixy shell` works out of the box,
+# and it can also serve as NIXY_DOCKER_MODE_IMAGE. Published multi-arch
+# (linux/amd64 + linux/arm64) by .github/workflows/docker.yml.
+#
+# The builder stage replicates the Dockerfile.build flow (nix develop on the
+# repo flake, Runfile build), but only produces the linux binary for this
+# image's TARGETARCH.
+ARG NIX_IMAGE=ghcr.io/nxtcoder17/nix:latest
+
+FROM ${NIX_IMAGE} AS builder
+WORKDIR /app
+
+ARG TARGETARCH
+
+ENV CACHE_DIR=/cache
+
+ENV GOMODCACHE=$CACHE_DIR/gomodcache
+ENV GOCACHE=$CACHE_DIR/gocache
+
+ENV CGO_ENABLED=0
+ARG VERSION=dev
+
+RUN --mount=type=bind,source=flake.nix,target=flake.nix \
+  --mount=type=bind,source=flake.lock,target=flake.lock \
+  nix develop --verbose --command echo "nix setup complete"
+
+RUN --mount=type=bind,source=flake.nix,target=flake.nix \
+  --mount=type=bind,source=flake.lock,target=flake.lock \
+  --mount=type=bind,source=go.mod,target=go.mod \
+  --mount=type=bind,source=go.sum,target=go.sum \
+  --mount=type=cache,target=$GOMODCACHE \
+  --mount=type=cache,target=$GOCACHE \
+  nix develop --command go mod download -x -json
+
+# direct go build, same flags as the `build` task in Runfile.yml
+# (only the linux binary for this build's TARGETARCH is needed for the image)
+RUN --mount=type=bind,source=.,target=/app \
+  --mount=type=cache,target=$GOMODCACHE \
+  --mount=type=cache,target=$GOCACHE \
+  nix develop --command go build -v \
+    -o /out/nixy-linux-$TARGETARCH \
+    -ldflags="-s -w -X 'main.Version=$VERSION'" \
+    -tags urfave_cli_no_docs ./cmd/
+
+FROM ${NIX_IMAGE}
+
+LABEL org.opencontainers.image.source="https://github.com/nxtcoder17/nixy"
+
+ARG TARGETARCH
+
+# /usr/local/bin is not on the base image PATH, extend it explicitly
+ENV PATH=/usr/local/bin:$PATH
+COPY --from=builder /out/nixy-linux-$TARGETARCH /usr/local/bin/nixy
