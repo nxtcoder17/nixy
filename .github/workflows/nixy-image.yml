@@ -65,7 +65,10 @@ jobs:
         id: meta
 
       # arch tags are keyed by the commit sha (immutable), so a manifest can
-      # never combine images from different runs
+      # never combine images from different runs.
+      # --provenance=false keeps each arch tag a plain image manifest (buildx
+      # would otherwise push an OCI index with an attestation manifest, which
+      # `docker manifest create --amend` refuses as "is a manifest list")
       - name: build and push image
         run: |+
           docker buildx build -f ./Dockerfile.nixy \
@@ -73,6 +76,7 @@ jobs:
             --tag "ghcr.io/nxtcoder17/nixy:${{ steps.meta.outputs.commit_slug }}-${{ matrix.arch }}" \
             --cache-to type=registry,ref="ghcr.io/nxtcoder17/nixy:buildx-cache-${{ matrix.arch }}",mode=max,compression=zstd,compression-level=13,force-compression=true \
             --cache-from type=registry,ref="ghcr.io/nxtcoder17/nixy:buildx-cache-${{ matrix.arch }}" \
+            --provenance=false \
             --push \
             .
 
@@ -99,17 +103,18 @@ jobs:
           set -euo pipefail
 
           IMAGE="ghcr.io/nxtcoder17/nixy"
-          tags=("$SHA_REF" latest)
+          # one call creates every tag from the same two arch images
+          tags=(-t "$IMAGE:$SHA_REF" -t "$IMAGE:latest")
           if [ -n "$VERSION_TAG" ]; then
-            tags+=("$VERSION_TAG")
+            tags+=(-t "$IMAGE:$VERSION_TAG")
           fi
 
-          for tag in "${tags[@]}"; do
-            docker manifest create "$IMAGE:$tag" \
-              --amend "$IMAGE:${SHA_REF}-amd64" \
-              --amend "$IMAGE:${SHA_REF}-arm64"
-            docker manifest push "$IMAGE:$tag"
-          done
+          # buildx composes the multi-arch index server-side from the per-arch
+          # tags (works even if a source is itself an index, unlike
+          # `docker manifest create --amend` which fails with "is a manifest list")
+          docker buildx imagetools create "${tags[@]}" \
+            "$IMAGE:${SHA_REF}-amd64" \
+            "$IMAGE:${SHA_REF}-arm64"
 
       - name: print pull commands
         env:

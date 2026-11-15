@@ -103,12 +103,16 @@ jobs:
           # `latest` is nixy's docker-mode default image (NIXY_DOCKER_MODE_IMAGE);
           # nixy itself is bind-mounted into that container at /bin/nixy by the
           # docker executor, so this tag is the plain nix runtime, not the nixy image
-          for tag in "$NIX_VERSION" "$SHA_REF" latest; do
-            docker manifest create "$IMAGE:$tag" \
-              --amend "$IMAGE:${NIX_VERSION}-${SHA_REF}-amd64" \
-              --amend "$IMAGE:${NIX_VERSION}-${SHA_REF}-arm64"
-            docker manifest push "$IMAGE:$tag"
-          done
+          #
+          # buildx composes the multi-arch index server-side; unlike
+          # `docker manifest create --amend` it also accepts sources that are
+          # themselves indexes ("is a manifest list")
+          docker buildx imagetools create \
+            -t "$IMAGE:$NIX_VERSION" \
+            -t "$IMAGE:$SHA_REF" \
+            -t "$IMAGE:latest" \
+            "$IMAGE:${NIX_VERSION}-${SHA_REF}-amd64" \
+            "$IMAGE:${NIX_VERSION}-${SHA_REF}-arm64"
 
       - name: print pull commands
         env:
