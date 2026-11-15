@@ -21,6 +21,10 @@ type Context struct {
 	// ColimaARCH overrides SystemARCH for platform resolution when the colima
 	// VM runs a different architecture than the host.
 	ColimaARCH string
+
+	// DockerPlatform overrides the container platform when docker-mode.platform
+	// is set.
+	DockerPlatform string
 }
 
 func (c *Context) FlakePath() string {
@@ -58,14 +62,19 @@ func (c *Context) ConfigHash() string {
 
 // OSArch is the platform where the shell runs: Linux for non-local executors.
 func (c *Context) OSArch() string {
-	if c.NixyMode == ColimaMode && c.ColimaARCH != "" {
-		return "linux/" + c.ColimaARCH
-	}
-
 	switch c.NixyMode {
-	case DockerMode, ColimaMode, BubbleWrapMode:
-		return "linux/" + c.SystemARCH
+	case DockerMode:
+		if c.DockerPlatform != "" {
+			return c.DockerPlatform
+		}
+	case ColimaMode:
+		if c.ColimaARCH != "" {
+			return "linux/" + c.ColimaARCH
+		}
+	case BubbleWrapMode:
 	default:
 		return c.SystemOS + "/" + c.SystemARCH
 	}
+
+	return "linux/" + c.SystemARCH
 }

@@ -172,6 +172,18 @@ func normalizePackages(appCtx *app.Context, nw *NixyYAML, parser *yamlAST.Parser
 	return hasPkgUpdates, nil
 }
 
+// setDockerPlatform points package resolution at the platform docker will run.
+func setDockerPlatform(appCtx *app.Context, platform *string) {
+	if appCtx.NixyMode != app.DockerMode {
+		return
+	}
+
+	appCtx.DockerPlatform = ""
+	if platform != nil {
+		appCtx.DockerPlatform = strings.TrimSpace(*platform)
+	}
+}
+
 // setColimaArch points package resolution at the arch the VM will run.
 func setColimaArch(appCtx *app.Context, arch string) {
 	if appCtx.NixyMode != app.ColimaMode {
@@ -198,6 +210,7 @@ func parseAndSyncNixyFile(appCtx *app.Context, file string) (*NixyYAML, error) {
 	}
 
 	setColimaArch(appCtx, nw.ColimaModeConfig.Arch)
+	setDockerPlatform(appCtx, nw.DockerModeConfig.Platform)
 
 	nw.sha256Sum = configHash(appCtx, b)
 
@@ -267,6 +280,9 @@ func mergeNixyYAMLs(yamls ...*NixyYAML) *NixyYAML {
 		n.Mounts = append(n.Mounts, y.Mounts...)
 
 		n.DockerModeConfig.Ports = append(n.DockerModeConfig.Ports, y.DockerModeConfig.Ports...)
+		if y.DockerModeConfig.Platform != nil {
+			n.DockerModeConfig.Platform = y.DockerModeConfig.Platform
+		}
 		n.ColimaModeConfig.Ports = append(n.ColimaModeConfig.Ports, y.ColimaModeConfig.Ports...)
 		if y.ColimaModeConfig.CPU != 0 {
 			n.ColimaModeConfig.CPU = y.ColimaModeConfig.CPU
@@ -322,6 +338,7 @@ func LoadFromFile(appCtx *app.Context, f string) (*Nixy, error) {
 	}
 
 	setColimaArch(appCtx, n.ColimaModeConfig.Arch)
+	setDockerPlatform(appCtx, n.DockerModeConfig.Platform)
 
 	fsPaths, err := CreateFSPaths(appCtx)
 	if err != nil {
