@@ -43,7 +43,7 @@ type Env struct {
 	// NixyExecutableBinPath is absolute path to the nixy executable, it is used to ensure nixy binary is in nixy shell's PATH
 	NixyExecutableBinPath string `env:"-"`
 
-	NixyDockerModeImage string `env:"NIXY_DOCKER_MODE_IMAGE" default:"ghcr.io/nxtcoder17/nix:nixy"`
+	NixyDockerModeImage string `env:"NIXY_DOCKER_MODE_IMAGE" default:"ghcr.io/nxtcoder17/nix:latest"`
 }
 
 func LoadEnv() (*Env, error) {

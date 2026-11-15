@@ -1,0 +1,127 @@
+name: Build Nix Image
+
+# Publishes ghcr.io/nxtcoder17/nix, built declaratively with
+# dockerTools.buildLayeredImage from flake.nix (see packages.nix-image).
+# On push it only ever runs on master, when flake.nix or flake.lock change;
+# the nix version is whatever nixpkgs snapshot flake.lock pins.
+# workflow_dispatch is kept while the pipeline is unproven (dispatch builds
+# whatever branch you run it from); once verified, drop it or guard it to
+# master-only (e.g. `if: github.ref != 'refs/heads/master'` no-op step).
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - master
+    paths:
+      - 'flake.nix'
+      - 'flake.lock'
+
+# one run at a time per ref; a newer run cancels an older in-flight one, so
+# an older run can never finish after a newer one and overwrite the shared
+# `latest` manifest with stale contents
+concurrency:
+  group: nix-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runs-on }}
+    # each arch is built natively on its own runner: images built by
+    # cross-compiling nixpkgs pick up a wrong eval system
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runs-on: ubuntu-latest
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+    outputs:
+      # same on both matrix legs (comes from the flake.lock-pinned nixpkgs)
+      nix_version: ${{ steps.nix-version.outputs.nix_version }}
+      sha: ${{ steps.nix-version.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: nxtcoder17/actions/setup-docker@main
+        with:
+          docker_registry: "ghcr.io"
+          docker_username: ${{ github.actor }}
+          docker_password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build image (dockerTools.buildLayeredImage)
+        run: |+
+          nix build -L .#nix-image
+          docker load < ./result
+
+      - name: resolve nix version
+        id: nix-version
+        run: |+
+          NIX_VERSION="$(docker run --rm nix:latest nix --version | awk '{print $NF}')"
+          echo "nix_version=$NIX_VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # arch tags are keyed by the nix version + commit sha (immutable), so a
+      # manifest can never combine images from different runs
+      - name: push image
+        run: |+
+          docker tag nix:latest "ghcr.io/nxtcoder17/nix:${{ steps.nix-version.outputs.nix_version }}-${{ steps.nix-version.outputs.sha }}-${{ matrix.arch }}"
+          docker push "ghcr.io/nxtcoder17/nix:${{ steps.nix-version.outputs.nix_version }}-${{ steps.nix-version.outputs.sha }}-${{ matrix.arch }}"
+
+  manifest:
+    name: Publish Multi-arch Manifest
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    steps:
+      - uses: nxtcoder17/actions/setup-docker@main
+        with:
+          docker_registry: "ghcr.io"
+          docker_username: ${{ github.actor }}
+          docker_password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: push multi-arch manifest
+        env:
+          NIX_VERSION: ${{ needs.build.outputs.nix_version }}
+          SHA_REF: ${{ needs.build.outputs.sha }}
+        run: |+
+          set -euo pipefail
+
+          IMAGE="ghcr.io/nxtcoder17/nix"
+          # `latest` is nixy's docker-mode default image (NIXY_DOCKER_MODE_IMAGE);
+          # nixy itself is bind-mounted into that container at /bin/nixy by the
+          # docker executor, so this tag is the plain nix runtime, not the nixy image
+          for tag in "$NIX_VERSION" "$SHA_REF" latest; do
+            docker manifest create "$IMAGE:$tag" \
+              --amend "$IMAGE:${NIX_VERSION}-${SHA_REF}-amd64" \
+              --amend "$IMAGE:${NIX_VERSION}-${SHA_REF}-arm64"
+            docker manifest push "$IMAGE:$tag"
+          done
+
+      - name: print pull commands
+        env:
+          NIX_VERSION: ${{ needs.build.outputs.nix_version }}
+          SHA_REF: ${{ needs.build.outputs.sha }}
+        run: |+
+          {
+            echo "## Published image (multi-arch)"
+            echo
+            echo '```bash'
+            echo "# nix runtime — nixy's docker-mode default image (NIXY_DOCKER_MODE_IMAGE)"
+            echo "docker pull ghcr.io/nxtcoder17/nix:$NIX_VERSION"
+            echo "docker pull ghcr.io/nxtcoder17/nix:$SHA_REF"
+            echo "docker pull ghcr.io/nxtcoder17/nix:latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

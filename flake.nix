@@ -2,7 +2,9 @@
   description = "development workspace";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    # pinned to nixy.yml's nixpkgs.default — the same snapshot the product
+    # shells resolve against, so image and user builds see the same nixpkgs
+    nixpkgs.url = "github:nixos/nixpkgs/050e09e091117c3d7328c7b2b7b577492c43c134";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -61,32 +63,61 @@
           '';
         };
 
-        packages.default = pkgs.buildGoModule {
-          pname = "nixy";
-          version = "dev";
-          src = ./.;
+        # ghcr.io/nxtcoder17/nix — the nix runtime image. Published by
+        # .github/workflows/docker.yml, which only runs when flake.nix/flake.lock
+        # change on the default branch, so the nix version is whatever nixpkgs
+        # snapshot flake.lock pins.
+        #
+        # The image is exactly the closure of the packages listed below; there is
+        # no post-hoc cleanup step, so nothing can be in the image that isn't
+        # declared here.
+        packages.nix-image =
+          let
+            nixConf = pkgs.writeTextDir "etc/nix/nix.conf" ''
+              experimental-features = nix-command flakes
+              # no nixbld users are shipped; builds run as the calling user
+              # (root in Dockerfile.build, the --user uid in nixy docker mode)
+              build-users-group =
+              # docker containers may not have user namespaces available
+              # (the official nixos/nix image does the same)
+              sandbox = false
+            '';
+          in
+          pkgs.dockerTools.buildLayeredImage {
+            name = "nix";
+            tag = "latest";
 
-          vendorHash = "sha256-jvWfx7cvEsmofeV7pDtNkzKM50QVHa9pb0rtzeyu7ro=";
+            contents = with pkgs; [
+              dockerTools.usrBinEnv # /usr/bin/env
+              dockerTools.binSh # /bin/sh -> bash
+              dockerTools.caCertificates # ca bundle at the usual /etc/ssl paths
+              dockerTools.fakeNss # minimal /etc/passwd + /etc/group (root, nobody)
+              nix
+              nixConf # /etc/nix/nix.conf
+              bashInteractive
+              coreutils
+              curl
+            ];
 
-          subPackages = ["cmd"];
+            config = {
+              Env = [
+                "PATH=/bin:/usr/bin"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "HOME=/root"
+              ];
+              Cmd = ["/bin/sh"];
+            };
 
-          ldflags = [
-            "-s"
-            "-w"
-            "-X main.Version=dev"
-          ];
-
-          postInstall = ''
-            mv $out/bin/cmd $out/bin/nixy
-          '';
-
-          meta = with pkgs.lib; {
-            description = "An approachable nix based development workspace setup tool";
-            homepage = "https://github.com/nxtcoder17/nixy";
-            license = licenses.mit;
-            maintainers = [];
+            fakeRootCommands = ''
+              # world-writable tmp, a home for root, and a writable store:
+              # nixy's docker mode seeds /nix into a named volume and chowns it to
+              # the invoking user, which only works if the dirs allow writing
+              mkdir -p tmp root home nix/store nix/var/nix
+              chmod 1777 tmp
+              chmod 0755 nix nix/store nix/var/nix
+            '';
           };
-        };
       }
     );
 }

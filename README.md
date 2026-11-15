@@ -83,6 +83,27 @@ go install github.com/nxtcoder17/nixy/cmd@latest
 nix run github:nxtcoder17/nixy -- shell
 ```
 
+### Docker Images
+Both images are published multi-arch (`linux/amd64` + `linux/arm64`) to ghcr.io:
+
+- `ghcr.io/nxtcoder17/nix` - nix runtime with flakes enabled. Built declaratively with `dockerTools.buildLayeredImage` from `packages.nix-image` in `flake.nix` — its contents are exactly the closure of the listed packages (`nix`, `bash`, `coreutils`, `curl` + ca-certs), with nothing bundled that isn't declared. Used as the builder base (`Dockerfile.build`) and as nixy's docker-mode image (`NIXY_DOCKER_MODE_IMAGE` default, tag `latest`; nixy itself is bind-mounted at `/bin/nixy` by the docker executor).
+- `ghcr.io/nxtcoder17/nixy` - same nix runtime with the `nixy` binary baked in at `/usr/local/bin/nixy`.
+
+```bash
+docker run --rm -it ghcr.io/nxtcoder17/nixy nixy --version
+docker run --rm -it ghcr.io/nxtcoder17/nix nix --version
+```
+
+Build the nix image locally with (nix required):
+```bash
+nix build .#nix-image && docker load < ./result
+```
+
+Build the nixy image locally with:
+```bash
+docker build -f Dockerfile.nixy --build-arg VERSION=<nixy-version> -t ghcr.io/nxtcoder17/nixy:<nixy-version> .
+```
+
 ## Core Features
 
 ### 🎯 Simple YAML Configuration

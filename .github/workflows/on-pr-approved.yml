@@ -28,7 +28,7 @@ jobs:
       - name: build and copy binaries
         env:
           buildx_cache_master: "ghcr.io/${{ github.repository }}:buildx-cache-master"
-          buildx_cache: "ghcr.io/${{ github.repository }}:buildx-cache-${{needs.github-release.outputs.sanitized_ref}}"
+          buildx_cache: "ghcr.io/${{ github.repository }}:buildx-cache-pr-${{ github.event.pull_request.number }}"
         run: |+
           docker buildx build -f ./Dockerfile.build \
             --cache-to type=registry,ref="$buildx_cache",mode=max,compression=zstd,compression-level=13,force-compression=true \
