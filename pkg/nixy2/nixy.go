@@ -42,6 +42,34 @@ type ColimaModeConfig struct {
 	Memory int      `yaml:"memory,omitempty"`
 	Disk   int      `yaml:"disk,omitempty"`
 	Ports  []string `yaml:"ports,omitempty"`
+	Arch   string   `yaml:"arch,omitempty"`
+}
+
+func NormalizeColimaArch(arch string) string {
+	switch strings.ToLower(strings.TrimSpace(arch)) {
+	case "amd64", "x86_64", "x86-64", "x86":
+		return "x86_64"
+	case "arm64", "aarch64":
+		return "aarch64"
+	case "host", "":
+		if arch == "" {
+			return ""
+		}
+		return "host"
+	default:
+		return strings.ToLower(strings.TrimSpace(arch))
+	}
+}
+
+func ColimaArchToGoArch(arch string) string {
+	switch NormalizeColimaArch(arch) {
+	case "x86_64":
+		return "amd64"
+	case "aarch64":
+		return "arm64"
+	default:
+		return ""
+	}
 }
 
 // NixyMount is for mounting a host file system path to a path in nixy shell
@@ -259,6 +287,9 @@ func mergeNixyYAMLs(yamls ...*NixyYAML) *NixyYAML {
 		}
 		if y.ColimaModeConfig.Disk != 0 {
 			n.ColimaModeConfig.Disk = y.ColimaModeConfig.Disk
+		}
+		if s := strings.TrimSpace(y.ColimaModeConfig.Arch); s != "" {
+			n.ColimaModeConfig.Arch = NormalizeColimaArch(s)
 		}
 	}
 

@@ -20,6 +20,7 @@ type colimaConfig struct {
 	Disk         int                 `yaml:"disk"`
 	Memory       int                 `yaml:"memory"`
 	Runtime      string              `yaml:"runtime"`
+	Arch         string              `yaml:"arch,omitempty"`
 	Mounts       []colimaConfigMount `yaml:"mounts,omitempty"`
 	PortForwards []colimaConfigPort  `yaml:"portForwards,omitempty"`
 	Env          map[string]string   `yaml:"env,omitempty"`
@@ -44,6 +45,7 @@ type colimaExecutor struct {
 	CPU          int
 	Memory       int
 	Disk         int
+	Arch         string
 	Ports        []colimaConfigPort
 	colimaConfig string
 }
@@ -51,6 +53,19 @@ type colimaExecutor struct {
 func GenColimaProfileName(pwd string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(pwd))
+	profileHash := fmt.Sprintf("%x", hasher.Sum(nil))[:12]
+	return fmt.Sprintf("nixy-%s", profileHash)
+}
+
+func genColimaProfileNameWithArch(pwd, arch string) string {
+	arch = NormalizeColimaArch(arch)
+	if arch == "" || arch == "host" {
+		return GenColimaProfileName(pwd)
+	}
+	hasher := sha256.New()
+	hasher.Write([]byte(pwd))
+	hasher.Write([]byte("|arch="))
+	hasher.Write([]byte(arch))
 	profileHash := fmt.Sprintf("%x", hasher.Sum(nil))[:12]
 	return fmt.Sprintf("nixy-%s", profileHash)
 }
@@ -84,7 +99,7 @@ func (c *colimaExecutor) sshConfigPath() (string, error) {
 }
 
 func (n *Nixy) NewColimaExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor {
-	profileName := GenColimaProfileName(appCtx.PWD)
+	profileName := genColimaProfileNameWithArch(appCtx.PWD, n.ColimaModeConfig.Arch)
 
 	cpu := n.ColimaModeConfig.CPU
 	if cpu <= 0 {
@@ -125,13 +140,25 @@ func (n *Nixy) NewColimaExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 		}
 	}
 
+	arch := NormalizeColimaArch(n.ColimaModeConfig.Arch)
+	env := fn.MapMerge(n.Env, commonExecutorEnv(appCtx))
+	// When arch is explicitly set, override NIXY_ARCH to match the VM arch
+	// so the nixy binary download inside the VM picks the correct artifact
+	// (host amd64 vs VM arm64 mismatch otherwise).
+	if arch != "" && arch != "host" {
+		if goArch := ColimaArchToGoArch(arch); goArch != "" {
+			env["NIXY_ARCH"] = goArch
+		}
+	}
+
 	return &colimaExecutor{
 		profileName:  profileName,
-		Env:          fn.MapMerge(n.Env, commonExecutorEnv(appCtx)),
+		Env:          env,
 		Mounts:       n.Mounts,
 		CPU:          cpu,
 		Memory:       memory,
 		Disk:         disk,
+		Arch:         arch,
 		Ports:        ports,
 		colimaConfig: fsPaths.GeneratedColimaConfigFilePath,
 	}
@@ -159,6 +186,7 @@ func (c *colimaExecutor) EnsureColimaVM(appCtx *app.Context) error {
 		Disk:         c.Disk,
 		Memory:       c.Memory,
 		Runtime:      "docker",
+		Arch:         c.Arch,
 		Mounts:       mounts,
 		PortForwards: c.Ports,
 		Env:          c.Env,
@@ -207,8 +235,10 @@ func (c *colimaExecutor) EnsureColimaVM(appCtx *app.Context) error {
 		return fmt.Errorf("Colima SSH config not found at %s: %w", sshConfigPath, err)
 	}
 
+	// Bake host version into script as fallback when $NIXY_VERSION is not propagated to the VM
+	hostVersion := strings.ReplaceAll(appCtx.AppVersion, "%", "%%")
 	// Now check and install Nix inside the VM if not present
-	checkNixScript := `
+	checkNixScript := fmt.Sprintf(`
 if ! command -v xz >/dev/null; then
   echo "xz-utils not found in VM. Installing..."
   sudo apt-get update && sudo apt-get install -y xz-utils
@@ -226,10 +256,31 @@ fi
 if ! command -v nixy >/dev/null; then
   echo "nixy not found in VM. Installing..."
   mkdir -p ~/.local/bin/
-  curl -L0 https://github.com/nxtcoder17/nixy/releases/download/v1.6.1-master/nixy-linux-$NIXY_ARCH > ~/.local/bin/nixy
+  # Resolve arch: prefer $NIXY_ARCH from host env, fall back to uname -m mapping
+  if [ -z "$NIXY_ARCH" ]; then
+    case "$(uname -m)" in x86_64|amd64) NIXY_ARCH="amd64" ;; aarch64|arm64) NIXY_ARCH="arm64" ;; *) NIXY_ARCH="amd64" ;; esac
+  fi
+  # Resolve version-aware download URL: use $NIXY_VERSION (or baked host version) when it looks like a release tag (v*), otherwise fall back to latest
+  NIXY_VER="$NIXY_VERSION"
+  if [ -z "$NIXY_VER" ]; then
+    NIXY_VER="%s"
+  fi
+  if [ -z "$NIXY_VER" ] || echo "$NIXY_VER" | grep -qE "^(dev|nightly)"; then
+    url="https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-$NIXY_ARCH"
+  else
+    case "$NIXY_VER" in v*) ver="$NIXY_VER" ;; *) ver="v$NIXY_VER" ;; esac
+    url="https://github.com/nxtcoder17/nixy/releases/download/$ver/nixy-linux-$NIXY_ARCH"
+    # If the versioned asset 404s (e.g. stale pre-release tag), fall back to latest
+    if ! curl --fail --silent --head --location "$url" >/dev/null 2>&1; then
+      echo "Versioned nixy asset not found at $url, falling back to latest"
+      url="https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-$NIXY_ARCH"
+    fi
+  fi
+  echo "Downloading nixy from $url (arch=$NIXY_ARCH, version=$NIXY_VER)..."
+  curl --fail --silent --show-error --location --retry 3 "$url" --output ~/.local/bin/nixy
   chmod +x ~/.local/bin/nixy
 fi
-`
+`, hostVersion)
 	cmd := exec.CommandContext(appCtx.Context, "colima", "ssh", "-p", c.profileName, "--", "sh", "-c", checkNixScript)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -244,6 +295,28 @@ func shellEscape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
+func shouldUseKittySSH() bool {
+	if os.Getenv("TERM") != "xterm-kitty" {
+		return false
+	}
+	// kitty's remote control breaks inside tmux/screen — fall back to plain ssh
+	if os.Getenv("TMUX") != "" {
+		return false
+	}
+	if os.Getenv("STY") != "" { // GNU screen
+		return false
+	}
+	// Require kitty context vars; without them kitty +kitten ssh fails with
+	// "Incorrect request ... expecting KITTY_PID/KITTY_WINDOW_ID"
+	if os.Getenv("KITTY_PID") == "" && os.Getenv("KITTY_WINDOW_ID") == "" && os.Getenv("KITTY_LISTEN_ON") == "" {
+		return false
+	}
+	if _, err := exec.LookPath("kitty"); err != nil {
+		return false
+	}
+	return true
+}
+
 func (c *colimaExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (*exec.Cmd, error) {
 	if err := c.EnsureColimaVM(appCtx); err != nil {
 		return nil, err
@@ -255,10 +328,8 @@ func (c *colimaExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 	}
 
 	var sshCmd []string
-	if os.Getenv("TERM") == "xterm-kitty" {
-		if _, err := exec.LookPath("kitty"); err == nil {
-			sshCmd = []string{"kitty", "+kitten", "ssh"}
-		}
+	if shouldUseKittySSH() {
+		sshCmd = []string{"kitty", "+kitten", "ssh"}
 	}
 	if len(sshCmd) == 0 {
 		sshCmd = []string{"ssh"}
@@ -325,10 +396,8 @@ func (c *colimaExecutor) SSH(appCtx *app.Context, raw bool) error {
 	}
 
 	sshCmd := func() []string {
-		if os.Getenv("TERM") == "xterm-kitty" {
-			if _, err := exec.LookPath("kitty"); err == nil {
-				return []string{"kitty", "+kitten", "ssh"}
-			}
+		if shouldUseKittySSH() {
+			return []string{"kitty", "+kitten", "ssh"}
 		}
 
 		return []string{"ssh"}
