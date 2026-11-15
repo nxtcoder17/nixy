@@ -57,9 +57,10 @@ func GenColimaProfileName(pwd string) string {
 	return fmt.Sprintf("nixy-%s", profileHash)
 }
 
+// genColimaProfileNameWithArch expects arch to be a normalized colima arch
+// ("x86_64"/"aarch64"), or "" when the VM uses the host arch.
 func genColimaProfileNameWithArch(pwd, arch string) string {
-	arch = NormalizeColimaArch(arch)
-	if arch == "" || arch == "host" {
+	if arch == "" {
 		return GenColimaProfileName(pwd)
 	}
 	hasher := sha256.New()
@@ -99,7 +100,16 @@ func (c *colimaExecutor) sshConfigPath() (string, error) {
 }
 
 func (n *Nixy) NewColimaExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor {
-	profileName := genColimaProfileNameWithArch(appCtx.PWD, n.ColimaModeConfig.Arch)
+	// arch stays empty unless the user explicitly asked for one, since empty
+	// means "use the host arch" (and keeps the profile name host-agnostic).
+	arch := strings.ToLower(strings.TrimSpace(n.ColimaModeConfig.Arch))
+	if arch != "" && arch != "host" {
+		arch = ParseCPUArch(arch).ColimaARCH()
+	} else {
+		arch = ""
+	}
+
+	profileName := genColimaProfileNameWithArch(appCtx.PWD, arch)
 
 	cpu := n.ColimaModeConfig.CPU
 	if cpu <= 0 {
@@ -140,16 +150,7 @@ func (n *Nixy) NewColimaExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 		}
 	}
 
-	arch := NormalizeColimaArch(n.ColimaModeConfig.Arch)
 	env := fn.MapMerge(n.Env, commonExecutorEnv(appCtx))
-	// When arch is explicitly set, override NIXY_ARCH to match the VM arch
-	// so the nixy binary download inside the VM picks the correct artifact
-	// (host amd64 vs VM arm64 mismatch otherwise).
-	if arch != "" && arch != "host" {
-		if goArch := ColimaArchToGoArch(arch); goArch != "" {
-			env["NIXY_ARCH"] = goArch
-		}
-	}
 
 	return &colimaExecutor{
 		profileName:  profileName,
@@ -256,27 +257,29 @@ fi
 if ! command -v nixy >/dev/null; then
   echo "nixy not found in VM. Installing..."
   mkdir -p ~/.local/bin/
-  # Resolve arch: prefer $NIXY_ARCH from host env, fall back to uname -m mapping
-  if [ -z "$NIXY_ARCH" ]; then
-    case "$(uname -m)" in x86_64|amd64) NIXY_ARCH="amd64" ;; aarch64|arm64) NIXY_ARCH="arm64" ;; *) NIXY_ARCH="amd64" ;; esac
-  fi
+  # Resolve arch from inside the VM: nixy release artifacts are named by go arch
+  case "$(uname -m)" in
+    x86_64|amd64) nixy_arch="amd64" ;;
+    aarch64|arm64) nixy_arch="arm64" ;;
+    *) nixy_arch="amd64" ;;
+  esac
   # Resolve version-aware download URL: use $NIXY_VERSION (or baked host version) when it looks like a release tag (v*), otherwise fall back to latest
   NIXY_VER="$NIXY_VERSION"
   if [ -z "$NIXY_VER" ]; then
     NIXY_VER="%s"
   fi
   if [ -z "$NIXY_VER" ] || echo "$NIXY_VER" | grep -qE "^(dev|nightly)"; then
-    url="https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-$NIXY_ARCH"
+    url="https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-$nixy_arch"
   else
     case "$NIXY_VER" in v*) ver="$NIXY_VER" ;; *) ver="v$NIXY_VER" ;; esac
-    url="https://github.com/nxtcoder17/nixy/releases/download/$ver/nixy-linux-$NIXY_ARCH"
+    url="https://github.com/nxtcoder17/nixy/releases/download/$ver/nixy-linux-$nixy_arch"
     # If the versioned asset 404s (e.g. stale pre-release tag), fall back to latest
     if ! curl --fail --silent --head --location "$url" >/dev/null 2>&1; then
       echo "Versioned nixy asset not found at $url, falling back to latest"
-      url="https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-$NIXY_ARCH"
+      url="https://github.com/nxtcoder17/nixy/releases/latest/download/nixy-linux-$nixy_arch"
     fi
   fi
-  echo "Downloading nixy from $url (arch=$NIXY_ARCH, version=$NIXY_VER)..."
+  echo "Downloading nixy from $url (arch=$nixy_arch, version=$NIXY_VER)..."
   curl --fail --silent --show-error --location --retry 3 "$url" --output ~/.local/bin/nixy
   chmod +x ~/.local/bin/nixy
 fi
