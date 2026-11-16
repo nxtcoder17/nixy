@@ -68,7 +68,7 @@ type URLPackage struct {
 	Name        string                      `yaml:"name"`
 	Sources     map[string]PackageURLAndSHA `yaml:"sources"`
 	InstallHook string                      `yaml:"installHook,omitempty"`
-	BinPaths    []string                    `yaml:"binPaths,omitempty"`
+	Binaries    []string                    `yaml:"binaries,omitempty"`
 }
 
 type PackageURLAndSHA struct {

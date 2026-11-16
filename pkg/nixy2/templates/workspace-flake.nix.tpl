@@ -116,7 +116,6 @@
                   # INFO: renaming the script as per the tool name, as it is a one off binary
                   cp "$src" ./$name
                   chmod +x $name
-                  echo 'cp $name $out/bin' > .copy-binary
                   ;;
                 *)
                   echo "!! Unknown archive type: $mime"
@@ -133,17 +132,83 @@
               return
               {{- end }}
 
-              if [ -f ".copy-binary" ]; then
-                source .copy-binary
-                return
+              # keep the full archive in the store path so it stays inspectable
+              archive="$out/package"
+              mkdir -p "$archive"
+              cp -rL ./. "$archive"
+
+              # Nix writes env-vars into the build dir; it is not part of the archive
+              rm -f "$archive/env-vars"
+
+              link_binary() {
+                src="$1"
+                name="$(basename "$src")"
+                dest="$out/bin/$name"
+
+                chmod +x "$src"
+
+                if [ -e "$dest" ] || [ -L "$dest" ]; then
+                  if [ "$(readlink -f "$src")" = "$(readlink -f "$dest")" ]; then
+                    return 0
+                  fi
+
+                  echo "nixy: package '{{$pkg.Name}}': two executables are named '$name':" >&2
+                  echo "  $(readlink -f "$dest")" >&2
+                  echo "  $src" >&2
+                  echo "nixy: set 'binaries' in nixy.yml to choose one" >&2
+                  exit 1
+                fi
+
+                ln -s "$(realpath --relative-to="$out/bin" "$src")" "$dest"
+              }
+
+              {{- if $pkg.Binaries }}
+              {{- range $entry := $pkg.Binaries }}
+              found=0
+              linked=0
+              for path in "$archive"/{{$entry}}; do
+                if [ ! -e "$path" ]; then
+                  continue
+                fi
+
+                found=1
+
+                if [ -d "$path" ]; then
+                  for file in "$path"/*; do
+                    if [ -f "$file" ] && [ -x "$file" ]; then
+                      link_binary "$file"
+                      linked=1
+                    fi
+                  done
+                  continue
+                fi
+
+                if [ -f "$path" ]; then
+                  link_binary "$path"
+                  linked=1
+                fi
+              done
+
+              if [ "$found" -eq 0 ]; then
+                echo "nixy: package '{{$pkg.Name}}': binaries entry '{{$entry}}' matched nothing" >&2
+                echo "nixy: archive contents:" >&2
+                find "$archive" -maxdepth 3 -mindepth 1 >&2
+                exit 1
               fi
 
-              # {{$pkg.BinPaths | toJson}}
-
-              {{- /*INFO: copying with -L avoids broken internal references. */}}
-              cp -rL * $out
-              {{- range $item := $pkg.BinPaths }}
-              ln -sf $out/{{$item}}/* $out/bin
+              if [ "$linked" -eq 0 ]; then
+                echo "nixy: package '{{$pkg.Name}}': binaries entry '{{$entry}}' matched no executables" >&2
+                echo "nixy: archive contents:" >&2
+                find "$archive" -maxdepth 3 -mindepth 1 >&2
+                exit 1
+              fi
+              {{- end }}
+              {{- else }}
+              while IFS= read -r file; do
+                if [ -x "$file" ]; then
+                  link_binary "$file"
+                fi
+              done < <(find "$archive" -maxdepth 3 -type f)
               {{- end }}
 
               echo "[##] printing contents of $out now"

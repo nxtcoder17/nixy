@@ -80,7 +80,7 @@ type URLPackage struct {
 	URL         string `yaml:"url"`
 	Sha256      string `yaml:"sha256"`
 	InstallHook string
-	BinPaths    []string `yaml:"-"`
+	Binaries    []string `yaml:"-"`
 }
 
 type WorkspaceFlakeParams struct {

@@ -8,8 +8,10 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nxtcoder17/fastlog"
 	"github.com/nxtcoder17/go.errors"
@@ -34,7 +36,7 @@ func (s literalString) MarshalYAML() (any, error) {
 type urlPackageYAML struct {
 	Name        string         `yaml:"name"`
 	Sources     orderedSources `yaml:"sources"`
-	BinPaths    []string       `yaml:"binPaths,omitempty"`
+	Binaries    []string       `yaml:"binaries,omitempty"`
 	InstallHook literalString  `yaml:"installHook,omitempty"`
 }
 
@@ -94,8 +96,19 @@ func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 		return fmt.Errorf("invalid URL package, must specify .name")
 	}
 
+	if hasYAMLKey(value, "binPaths") {
+		return fmt.Errorf(
+			"URL package %q: binPaths was renamed to binaries; remove it to auto-detect executables, or list the paths under binaries",
+			urlpkg.Name,
+		)
+	}
+
 	if urlpkg.Sources == nil {
 		return fmt.Errorf("invalid URL package, must specify .sources")
+	}
+
+	if err := validateBinaries(urlpkg.Name, urlpkg.Binaries); err != nil {
+		return err
 	}
 
 	for k, v := range urlpkg.Sources {
@@ -107,6 +120,44 @@ func (p *Package) UnmarshalYAML(value *yaml.Node) error {
 	*p = Package{
 		URLPackage: &urlpkg,
 	}
+	return nil
+}
+
+func hasYAMLKey(value *yaml.Node, key string) bool {
+	if value.Kind != yaml.MappingNode {
+		return false
+	}
+
+	for i := 0; i < len(value.Content); i += 2 {
+		if value.Content[i].Value == key {
+			return true
+		}
+	}
+
+	return false
+}
+
+func validateBinaries(pkgName string, entries []string) error {
+	for _, entry := range entries {
+		if strings.TrimSpace(entry) == "" {
+			return fmt.Errorf("URL package %q: binaries entry must not be empty", pkgName)
+		}
+
+		if strings.ContainsFunc(entry, unicode.IsSpace) {
+			return fmt.Errorf("URL package %q: binaries entry %q must not contain whitespace", pkgName, entry)
+		}
+
+		if filepath.IsAbs(entry) {
+			return fmt.Errorf("URL package %q: binaries entry %q must be relative to the archive root", pkgName, entry)
+		}
+
+		for _, part := range strings.Split(filepath.ToSlash(entry), "/") {
+			if part == ".." {
+				return fmt.Errorf("URL package %q: binaries entry %q must stay inside the archive", pkgName, entry)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -127,7 +178,7 @@ func (p *Package) MarshalYAML() (any, error) {
 		out := urlPackageYAML{
 			Name:     p.URLPackage.Name,
 			Sources:  sources,
-			BinPaths: p.URLPackage.BinPaths,
+			Binaries: p.URLPackage.Binaries,
 		}
 		if p.URLPackage.InstallHook != "" {
 			out.InstallHook = literalString(p.URLPackage.InstallHook)
@@ -216,7 +267,7 @@ func genWorkspaceFlakeParams(appCtx *app.Context, params WorkspaceFlakeGenParams
 				URL:         source.URL,
 				Sha256:      source.SHA256,
 				InstallHook: pkg.URLPackage.InstallHook,
-				BinPaths:    pkg.URLPackage.BinPaths,
+				Binaries:    pkg.URLPackage.Binaries,
 			})
 		}
 	}

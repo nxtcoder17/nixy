@@ -17,8 +17,6 @@ packages:
       linux/arm64:
         url: https://opencode.ai/update/api/latest/cli/opencode/opencode-linux-arm64.tar.gz
         sha256: sha256-Mgf7XN7ESNR5JCwPGhT09738rTp5IJteuPkANyXpNxE=
-    binPaths:
-      - .
 mounts:
   - source: $HOME/.claude/skills
     dest: $HOME/.agents/skills
