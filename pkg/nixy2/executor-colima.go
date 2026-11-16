@@ -165,6 +165,27 @@ func (n *Nixy) NewColimaExecutor(appCtx *app.Context, fsPaths *FSPaths) Executor
 	}
 }
 
+// hasMount reports whether the colima config currently on disk already mounts
+// location, i.e. whether a running VM was started with it.
+func (c *colimaExecutor) hasMount(location string) bool {
+	b, err := os.ReadFile(c.colimaConfig)
+	if err != nil {
+		return false
+	}
+
+	var cfg colimaConfig
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return false
+	}
+
+	for _, m := range cfg.Mounts {
+		if m.Location == location {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *colimaExecutor) EnsureColimaVM(appCtx *app.Context) error {
 	statusCmd := exec.CommandContext(appCtx.Context, "colima", "status", "-p", c.profileName)
 	vmRunning := statusCmd.Run() == nil
@@ -180,6 +201,15 @@ func (c *colimaExecutor) EnsureColimaVM(appCtx *app.Context) error {
 			MountPoint: os.ExpandEnv(m.Destination),
 			Writable:   !m.ReadOnly,
 		})
+	}
+
+	// a worktree's .git file points at the shared git dir by absolute path, so
+	// the mount keeps the host layout instead of aliasing it
+	if parent, ok := GetGitWorktreesParentDir(appCtx.Context, appCtx.PWD); ok && !isSameOrUnder(parent, appCtx.PWD) {
+		if vmRunning && !c.hasMount(parent) {
+			fastlog.Warn("restart the colima profile to mount the worktrees dir", "profile", c.profileName, "dir", parent)
+		}
+		mounts = append(mounts, colimaConfigMount{Location: parent, Writable: true})
 	}
 
 	cfg := colimaConfig{

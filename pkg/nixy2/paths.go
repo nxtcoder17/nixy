@@ -46,6 +46,97 @@ func GetGitRootForWorkspace(ctx context.Context, dir string) (string, bool) {
 	return gitRoot, true
 }
 
+// listGitWorktrees returns the absolute path of every worktree of the repo
+// containing dir, main worktree included.
+func listGitWorktrees(ctx context.Context, dir string) []string {
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "worktree", "list", "--porcelain")
+	result, err := cmd.CombinedOutput()
+	if err != nil {
+		fastlog.Debug("[CHECK/git-worktrees] worktree list (FAILED)", "cmd", cmd.String(), "stderr", string(result), "err", err)
+		return nil
+	}
+
+	return parseGitWorktreeList(result)
+}
+
+func parseGitWorktreeList(out []byte) []string {
+	var dirs []string
+	for _, line := range strings.Split(string(out), "\n") {
+		path, ok := strings.CutPrefix(line, "worktree ")
+		if !ok {
+			continue
+		}
+		if path = strings.TrimSpace(path); path != "" {
+			dirs = append(dirs, path)
+		}
+	}
+
+	return dirs
+}
+
+// commonDirPrefix returns the deepest directory containing every dir.
+func commonDirPrefix(dirs []string) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+
+	prefix := filepath.Clean(dirs[0])
+	for _, dir := range dirs[1:] {
+		dir = filepath.Clean(dir)
+		for !isSameOrUnder(dir, prefix) {
+			parent := filepath.Dir(prefix)
+			if parent == prefix {
+				return prefix
+			}
+			prefix = parent
+		}
+	}
+
+	return prefix
+}
+
+func isSameOrUnder(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+string(os.PathSeparator))
+}
+
+// isSafeMountRoot rejects roots that would drag unrelated work into the
+// executor, e.g. / or the whole home directory.
+func isSafeMountRoot(root string) bool {
+	if root == "" || root == string(os.PathSeparator) {
+		return false
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return true
+	}
+
+	home = filepath.Clean(home)
+	return root != home && !isSameOrUnder(home, root)
+}
+
+// GetGitWorktreesParentDir returns the directory shared by every worktree of
+// the workspace. Mounting it must keep the original path: a worktree's .git
+// file points at the shared git dir by absolute path.
+//
+// Worktrees that share no safe dir with the repo, e.g. a bare repo whose
+// worktrees live outside it, are unsupported and report false.
+func GetGitWorktreesParentDir(ctx context.Context, dir string) (string, bool) {
+	dirs := listGitWorktrees(ctx, dir)
+	if len(dirs) < 2 {
+		return "", false
+	}
+
+	parent := commonDirPrefix(dirs)
+	if !isSafeMountRoot(parent) {
+		fastlog.Warn("[CHECK/git-worktrees] worktrees mount parent is unsafe, skipping", "parent", parent, "worktrees", dirs)
+		return "", false
+	}
+
+	fastlog.Debug("[CHECK/git-worktrees]", "parent", parent, "worktrees", dirs)
+	return parent, true
+}
+
 func CreateFSPaths(appCtx *app.Context) (*FSPaths, error) {
 	// /nix/var/nix is path for a directory to be used for nix store
 

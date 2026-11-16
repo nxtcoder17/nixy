@@ -84,15 +84,7 @@ func TestNewColimaExecutorGeneratesConfiguredYAML(t *testing.T) {
 	home := filepath.Join(tmpDir, "home")
 	t.Setenv("HOME", home)
 	t.Setenv("COLIMA_HOME", filepath.Join(tmpDir, "colima"))
-	t.Setenv("PATH", filepath.Join(tmpDir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
-	binDir := filepath.Join(tmpDir, "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	colimaScript := "#!/bin/sh\ncase \"$1\" in\nstatus) exit 1 ;;\nstart) mkdir -p \"$(dirname \"$TEST_SSH_CONFIG\")\"; : > \"$TEST_SSH_CONFIG\" ;;\nssh) exit 0 ;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(binDir, "colima"), []byte(colimaScript), 0755); err != nil {
-		t.Fatal(err)
-	}
+	stubs(t, map[string]string{"colima": colimaStub})
 	sshPath := filepath.Join(os.Getenv("COLIMA_HOME"), "_lima", "colima-"+c.profileName, "ssh.config")
 	t.Setenv("TEST_SSH_CONFIG", sshPath)
 
@@ -213,6 +205,121 @@ exit 1
 			}
 			if _, err := os.Stat(sshPath); err != nil {
 				t.Fatalf("expected SSH config at %s: %v", sshPath, err)
+			}
+		})
+	}
+}
+
+func TestEnsureColimaVM_WorktreeMounts(t *testing.T) {
+	tests := []struct {
+		name      string
+		worktrees string
+		pwd       string
+		wantExtra []colimaConfigMount
+	}{
+		{
+			name: "not a git repo adds no mount",
+		},
+		{
+			name:      "no worktrees adds no mount",
+			worktrees: porcelain("/work/repo"),
+		},
+		{
+			name:      "shared parent mounts once",
+			worktrees: porcelain("/work/repo", "/work/trees/one"),
+			wantExtra: []colimaConfigMount{{Location: "/work", Writable: true}},
+		},
+		{
+			name:      "worktree under pwd adds no mount",
+			worktrees: porcelain("/work/repo", "/work/repo/trees/one"),
+		},
+		{
+			name:      "bare repo with internal worktree mounts repo dir",
+			worktrees: porcelain("/srv/foo.git", "/srv/foo.git/master"),
+			pwd:       "/srv/foo.git/master",
+			wantExtra: []colimaConfigMount{{Location: "/srv/foo.git", Writable: true}},
+		},
+		{
+			name:      "bare repo with external worktree adds no mount",
+			worktrees: porcelain("/repos/foo.git", "/work/foo"),
+		},
+		{
+			name:      "common parent is home adds no mount",
+			worktrees: porcelain("/home/dev/a", "/home/dev/b"),
+			pwd:       "/home/dev/a",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pwd := tt.pwd
+			if pwd == "" {
+				pwd = "/work/repo"
+			}
+
+			tmpDir := t.TempDir()
+			t.Setenv("HOME", "/home/dev")
+			t.Setenv("COLIMA_HOME", filepath.Join(tmpDir, "colima"))
+			t.Setenv("TEST_SSH_CONFIG", filepath.Join(tmpDir, "colima", "_lima", "colima-nixy-test", "ssh.config"))
+			stubs(t, map[string]string{"colima": colimaStub, "git": fakeGit(tt.worktrees)})
+
+			configPath := filepath.Join(tmpDir, "colima.yaml")
+			c := &colimaExecutor{profileName: "nixy-test", colimaConfig: configPath}
+
+			if err := c.EnsureColimaVM(&app.Context{Context: context.Background(), PWD: pwd}); err != nil {
+				t.Fatal(err)
+			}
+
+			b, err := os.ReadFile(configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got colimaConfig
+			if err := yaml.Unmarshal(b, &got); err != nil {
+				t.Fatal(err)
+			}
+
+			want := append([]colimaConfigMount{{Location: pwd, Writable: true}}, tt.wantExtra...)
+			if len(got.Mounts) != len(want) {
+				t.Fatalf("mounts = %+v, want %+v", got.Mounts, want)
+			}
+			for i := range want {
+				if got.Mounts[i] != want[i] {
+					t.Errorf("mounts[%d] = %+v, want %+v", i, got.Mounts[i], want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestColimaExecutor_HasMount(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "colima.yaml")
+	c := &colimaExecutor{colimaConfig: configPath}
+
+	tests := []struct {
+		name    string
+		content string
+		write   bool
+		want    bool
+	}{
+		{name: "missing config returns false"},
+		{name: "mounted location returns true", write: true, content: "mounts:\n  - location: /work\n    writable: true\n", want: true},
+		{name: "other mount returns false", write: true, content: "mounts:\n  - location: /other\n"},
+		{name: "config without mounts returns false", write: true, content: "cpu: 2\n"},
+		{name: "invalid yaml returns false", write: true, content: "mounts: [oops\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_ = os.Remove(configPath)
+			if tt.write {
+				if err := os.WriteFile(configPath, []byte(tt.content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if got := c.hasMount("/work"); got != tt.want {
+				t.Fatalf("hasMount(/work) = %v, want %v", got, tt.want)
 			}
 		})
 	}

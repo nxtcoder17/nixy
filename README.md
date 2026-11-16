@@ -368,6 +368,22 @@ mounts:
     readonly: true
 ```
 
+### 🌳 Git Worktrees
+
+Non-local executors mount what the worktrees need, at their original absolute paths, so `git`
+keeps working from any worktree inside the shell. A worktree's `.git` file points at the
+shared git dir by absolute path, which is why the mount keeps the host layout instead of
+aliasing it.
+
+The common layout — the repo and its worktrees under a shared parent — needs a single mount.
+That parent is skipped when it is unsafe to expose (`/`, your home directory). Worktrees that
+share no safe parent with the repo, such as a bare repo whose worktrees live outside it, are
+not supported yet. A repo with no worktrees, or no repo at all, mounts nothing.
+
+This is automatic and needs no `mounts` entry. Worktrees created later appear as long as
+they land inside an already mounted dir. Colima bakes mounts into the VM, so a worktree
+outside the mounted dirs needs a profile restart (nixy warns once).
+
 ## Commands
 
 ### Core Commands
