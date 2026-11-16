@@ -161,6 +161,26 @@ The source is picked by matching the `<os>/<arch>` where the shell runs: the
 host in `local` mode, and the Linux container or VM in `docker`/`colima` mode.
 Multiple platforms can be listed side by side.
 
+The full archive is kept under `$out/package/` in the Nix store, so you
+can inspect it later. Executable files found within three levels of the archive
+root are symlinked into `$out/bin`, which is what lands on `PATH`.
+
+To control exactly which executables are exposed, set `binaries`. Entries are
+relative to the archive root and may be globs. A file entry is linked and made
+executable; a directory entry contributes its executable children:
+```yaml
+  - name: mytool
+    sources:
+      linux/amd64:
+        url: https://example.com/mytool-linux-amd64.tar.gz
+    binaries:
+      - ./bin/mytool
+      - ./extras/*
+```
+
+`installHook` runs instead of the default install step, so auto-detection and
+`binaries` do not apply when it is set.
+
 ### 🔧 Build System
 Define reproducible runtime bundles that can be used outside `nixy shell` (for example in Docker images):
 ```yaml
@@ -462,8 +482,8 @@ packages:
       linux/amd64:
         url: <url>
         sha256: <hash>                # Optional
-    binPaths:
-      - <relative-bin-dir>            # Optional
+    binaries:                        # Optional, overrides executable auto-detection
+      - <relative-path-or-glob>
     installHook: |                    # Optional
       <shell commands>
 

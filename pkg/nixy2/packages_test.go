@@ -2,7 +2,10 @@ package nixy2
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nxtcoder17/nixy/internal/app"
@@ -158,6 +161,7 @@ func TestGenWorkspaceFlakeParams_DockerModeOnDarwin_PicksLinuxArm64Source(t *tes
 							SHA256: "arm64hash",
 						},
 					},
+					Binaries: []string{"./opencode"},
 				},
 			},
 		},
@@ -180,6 +184,83 @@ func TestGenWorkspaceFlakeParams_DockerModeOnDarwin_PicksLinuxArm64Source(t *tes
 	if got.URLPackages[0].Sha256 != "arm64hash" {
 		t.Errorf("selected SHA256 = %q, want %q", got.URLPackages[0].Sha256, "arm64hash")
 	}
+	if want := []string{"./opencode"}; !slices.Equal(got.URLPackages[0].Binaries, want) {
+		t.Errorf("binaries = %v, want %v", got.URLPackages[0].Binaries, want)
+	}
+}
+
+func TestURLPackage_BinariesListed_ParsesThem(t *testing.T) {
+	input := `name: tool
+sources:
+  linux/amd64:
+    url: https://example.com/tool
+binaries:
+  - ./bin/tool
+  - ./extras/*
+`
+
+	var pkg Package
+	if err := yaml.Unmarshal([]byte(input), &pkg); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"./bin/tool", "./extras/*"}
+	if !slices.Equal(pkg.URLPackage.Binaries, want) {
+		t.Fatalf("Binaries = %v, want %v", pkg.URLPackage.Binaries, want)
+	}
+}
+
+func TestURLPackage_BinPathsKey_ReturnsRenameHint(t *testing.T) {
+	input := `name: tool
+sources:
+  linux/amd64:
+    url: https://example.com/tool
+binPaths:
+  - .
+`
+
+	var pkg Package
+	err := yaml.Unmarshal([]byte(input), &pkg)
+	if err == nil {
+		t.Fatal("expected an error for the removed binPaths key")
+	}
+	if !strings.Contains(err.Error(), "renamed to binaries") {
+		t.Fatalf("error = %v, want a rename hint", err)
+	}
+}
+
+func TestURLPackage_UnsafeBinaries_ReturnError(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+		want  string
+	}{
+		{name: "parent_traversal_rejected", entry: "../tool", want: "stay inside the archive"},
+		{name: "absolute_path_rejected", entry: "/usr/bin/tool", want: "must be relative"},
+		{name: "empty_entry_rejected", entry: "", want: "must not be empty"},
+		{name: "whitespace_rejected", entry: "./bin/my tool", want: "must not contain whitespace"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := fmt.Sprintf(`name: tool
+sources:
+  linux/amd64:
+    url: https://example.com/tool
+binaries:
+  - %q
+`, tt.entry)
+
+			var pkg Package
+			err := yaml.Unmarshal([]byte(input), &pkg)
+			if err == nil {
+				t.Fatalf("expected an error for entry %q", tt.entry)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
 }
 
 func TestURLPackage_MarshalYAML_KeyOrdering(t *testing.T) {
@@ -196,7 +277,7 @@ func TestURLPackage_MarshalYAML_KeyOrdering(t *testing.T) {
 					Sources: map[string]PackageURLAndSHA{
 						"linux/amd64": {URL: "https://example.com/run-linux-amd64", SHA256: "abc123"},
 					},
-					BinPaths:    []string{"bin/run"},
+					Binaries:    []string{"bin/run"},
 					InstallHook: "echo hello",
 				},
 			},
@@ -205,7 +286,7 @@ sources:
   linux/amd64:
     url: https://example.com/run-linux-amd64
     sha256: abc123
-binPaths:
+binaries:
   - bin/run
 installHook: |-
   echo hello
