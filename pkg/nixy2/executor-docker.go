@@ -218,7 +218,7 @@ func (d *dockerExecutor) Exec(appCtx *app.Context, cmd string, args ...string) (
 
 	// a worktree's .git file points at the shared git dir by absolute path, so
 	// the mount keeps the host layout instead of aliasing it
-	if parent, ok := GetGitWorktreesParentDir(appCtx.Context, appCtx.PWD); ok && !isSameOrUnder(parent, appCtx.PWD) {
+	if parent, ok := GetGitWorktreesParentDir(appCtx); ok && !isSameOrUnder(parent, appCtx.PWD) {
 		dockerArgs = append(dockerArgs, "-v", addMount(parent, parent, "z"))
 	}
 

@@ -8,10 +8,8 @@ import (
 	"github.com/nxtcoder17/nixy/internal/app"
 )
 
-func newDockerExecArgs(t *testing.T, pwd string) []string {
-	t.Helper()
-
-	appCtx := &app.Context{
+func newDockerAppCtx(pwd string) *app.Context {
+	return &app.Context{
 		Context: context.Background(),
 		Env: &app.Env{
 			NixyMode:              app.DockerMode,
@@ -20,6 +18,11 @@ func newDockerExecArgs(t *testing.T, pwd string) []string {
 		},
 		PWD: pwd,
 	}
+}
+
+func dockerExecArgs(t *testing.T, appCtx *app.Context) []string {
+	t.Helper()
+
 	n := &Nixy{NixyYAML: &NixyYAML{}}
 
 	cmd, err := n.NewDockerExecutor(appCtx, &FSPaths{}).Exec(appCtx, "nix", "--version")
@@ -35,6 +38,7 @@ func TestDockerExecutor_WorktreeMounts(t *testing.T) {
 		name      string
 		worktrees string
 		noGit     bool
+		disabled  bool
 		pwd       string
 		wantExtra []string
 	}{
@@ -79,6 +83,12 @@ func TestDockerExecutor_WorktreeMounts(t *testing.T) {
 			pwd:       "/srv/foo.git/master",
 			wantExtra: []string{"/srv/foo.git:/srv/foo.git:z"},
 		},
+		{
+			name:      "mounts disabled adds no mount",
+			worktrees: porcelain("/work/repo", "/work/trees/one"),
+			disabled:  true,
+			pwd:       "/work/repo",
+		},
 	}
 
 	for _, tt := range tests {
@@ -94,7 +104,10 @@ func TestDockerExecutor_WorktreeMounts(t *testing.T) {
 				isolatedPath(t, dir)
 			}
 
-			got := volumeMounts(newDockerExecArgs(t, tt.pwd))
+			appCtx := newDockerAppCtx(tt.pwd)
+			appCtx.NixyDisableWorktreeMounts = tt.disabled
+
+			got := volumeMounts(dockerExecArgs(t, appCtx))
 
 			want := append([]string{
 				"nixy-nix-store:/nix:z",
@@ -126,15 +139,7 @@ func TestDockerExecutor_PlatformFlag_AddsFlagOnlyWhenSet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			stubs(t, map[string]string{"docker": dockerStub})
 
-			appCtx := &app.Context{
-				Context: context.Background(),
-				Env: &app.Env{
-					NixyMode:              app.DockerMode,
-					NixyDockerModeImage:   "nixy-test",
-					NixyExecutableBinPath: "/bin/nixy",
-				},
-				PWD: t.TempDir(),
-			}
+			appCtx := newDockerAppCtx(t.TempDir())
 			n := &Nixy{
 				NixyYAML: &NixyYAML{
 					DockerModeConfig: DockerModeConfig{Platform: tt.platform},

@@ -5,4 +5,3 @@ bin/
 .builds
 .dist
 .nixy/
-nixy.local.yml

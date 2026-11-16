@@ -66,6 +66,7 @@ func main() {
 			actionShell(),
 			actionBuild(),
 			actionColima(),
+			actionEnv(),
 		},
 
 		Suggest: true,

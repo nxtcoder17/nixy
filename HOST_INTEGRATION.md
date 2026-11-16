@@ -4,14 +4,7 @@ This guide explains how to expose host system resources to sandboxed nixy shells
 
 ## Where to Configure
 
-Host integrations can be configured at two levels:
-
-| Level | File | Use Case |
-|-------|------|----------|
-| **Profile** | `nixy profile edit` | Personal tools shared across all projects |
-| **Project** | `nixy.yml` in project root | Project-specific needs for all contributors |
-
-> **Tip**: Use profile-level config for your personal workflow (browser, neovim, container tools, etc.) to avoid cluttering project configs. Use project-level for things the whole team needs.
+Host integrations live in `nixy.yml` in the project root, through `mounts:` and `env:`.
 
 ---
 

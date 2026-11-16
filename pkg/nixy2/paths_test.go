@@ -4,6 +4,8 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+
+	"github.com/nxtcoder17/nixy/internal/app"
 )
 
 func TestParseGitWorktreeList_WorktreesAndMetadata_ReturnsWorktreePaths(t *testing.T) {
@@ -77,6 +79,7 @@ func TestGetGitWorktreesParentDir(t *testing.T) {
 		name      string
 		worktrees string
 		noGit     bool
+		disabled  bool
 		want      string
 		wantOK    bool
 	}{
@@ -109,6 +112,11 @@ func TestGetGitWorktreesParentDir(t *testing.T) {
 			want:      "/srv/foo.git",
 			wantOK:    true,
 		},
+		{
+			name:      "mounts disabled returns false",
+			worktrees: porcelain("/work/repo", "/work/trees/one"),
+			disabled:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -124,7 +132,13 @@ func TestGetGitWorktreesParentDir(t *testing.T) {
 				isolatedPath(t, dir)
 			}
 
-			got, ok := GetGitWorktreesParentDir(context.Background(), "/work/repo")
+			appCtx := &app.Context{
+				Context: context.Background(),
+				Env:     &app.Env{NixyDisableWorktreeMounts: tt.disabled},
+				PWD:     "/work/repo",
+			}
+
+			got, ok := GetGitWorktreesParentDir(appCtx)
 			if ok != tt.wantOK || got != tt.want {
 				t.Fatalf("GetGitWorktreesParentDir() = %q, %v, want %q, %v", got, ok, tt.want, tt.wantOK)
 			}

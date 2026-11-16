@@ -120,9 +120,14 @@ func isSafeMountRoot(root string) bool {
 // file points at the shared git dir by absolute path.
 //
 // Worktrees that share no safe dir with the repo, e.g. a bare repo whose
-// worktrees live outside it, are unsupported and report false.
-func GetGitWorktreesParentDir(ctx context.Context, dir string) (string, bool) {
-	dirs := listGitWorktrees(ctx, dir)
+// worktrees live outside it, are unsupported and report false. Setting
+// NIXY_DISABLE_WORKTREE_MOUNTS also reports false.
+func GetGitWorktreesParentDir(appCtx *app.Context) (string, bool) {
+	if appCtx.NixyDisableWorktreeMounts {
+		return "", false
+	}
+
+	dirs := listGitWorktrees(appCtx.Context, appCtx.PWD)
 	if len(dirs) < 2 {
 		return "", false
 	}

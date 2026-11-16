@@ -1,9 +1,11 @@
 package app
 
 import (
-	"github.com/codingconcepts/env"
 	"os"
 	"path/filepath"
+	"reflect"
+
+	"github.com/codingconcepts/env"
 )
 
 type NixyMode string
@@ -21,29 +23,55 @@ const (
 )
 
 type Env struct {
-	// InNixyShell is just a check to determine whether nixy is running in a `nixy shell`
-	InNixyShell bool `env:"NIXY_SHELL" default:"false"`
+	InNixyShell bool `env:"NIXY_SHELL" default:"false" usage:"set by nixy inside a nixy shell"`
 
-	// NixyMode controls Nixy's execution mode
-	NixyMode NixyMode `env:"NIXY_MODE" default:"local"`
+	NixyMode NixyMode `env:"NIXY_MODE" default:"local" usage:"execution backend: local, local-ignore-env, docker, bubblewrap or colima"`
 
-	// NixyPreload is totally separate nixy.yml file, that is used while preparing nixy shell's environment
-	NixyPreload string `env:"NIXY_PRELOAD"`
+	NixyPreload string `env:"NIXY_PRELOAD" usage:"additional nixy.yml merged before the project's nixy.yml"`
 
-	// NixyProjectDir is directory inside a user's project next to `nixy.yml` file, in while nixy puts it's inflight and computed files
-	// This directory can be used to inspect, what's exactly is a part of your nixy shell
-	NixyProjectDir string `env:"NIXY_PROJECT_DIR" default:".nixy"`
+	NixyProjectDir string `env:"NIXY_PROJECT_DIR" default:".nixy" usage:"dir next to nixy.yml holding nixy's generated files, inspect it to see what is part of your shell"`
 
-	// NixyGlobalDir is directory where nixy puts global files.
-	// It defaults to $XDG_DATA_HOME/nixy.
-	// like,
-	// - nixy shell user's home directory
-	NixyGlobalDir string `env:"NIXY_GLOBAL_DIR"`
+	NixyGlobalDir string `env:"NIXY_GLOBAL_DIR" usage:"dir for nixy's global files (default: $XDG_DATA_HOME/nixy, else ~/.local/share/nixy)"`
 
-	// NixyExecutableBinPath is absolute path to the nixy executable, it is used to ensure nixy binary is in nixy shell's PATH
+	// NixyExecutableBinPath is resolved by nixy itself, so it is not configurable.
 	NixyExecutableBinPath string `env:"-"`
 
-	NixyDockerModeImage string `env:"NIXY_DOCKER_MODE_IMAGE" default:"ghcr.io/nxtcoder17/nix:latest"`
+	NixyDisableWorktreeMounts bool `env:"NIXY_DISABLE_WORKTREE_MOUNTS" default:"false" usage:"true keeps sibling git worktrees out of non-local shells"`
+
+	NixyDockerModeImage string `env:"NIXY_DOCKER_MODE_IMAGE" default:"ghcr.io/nxtcoder17/nix:latest" usage:"image used by docker mode"`
+}
+
+// EnvVar describes an environment variable nixy reads.
+type EnvVar struct {
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	Default string `json:"default,omitempty"`
+	Usage   string `json:"usage"`
+}
+
+// EnvVars lists the environment variables nixy reads, in declaration order,
+// with the values seen in the current environment.
+func EnvVars() []EnvVar {
+	t := reflect.TypeOf(Env{})
+
+	vars := make([]EnvVar, 0, t.NumField())
+	for i := range t.NumField() {
+		field := t.Field(i)
+
+		name := field.Tag.Get("env")
+		if name == "" || name == "-" {
+			continue
+		}
+
+		vars = append(vars, EnvVar{
+			Name:    name,
+			Value:   os.Getenv(name),
+			Default: field.Tag.Get("default"),
+			Usage:   field.Tag.Get("usage"),
+		})
+	}
+
+	return vars
 }
 
 func LoadEnv() (*Env, error) {
@@ -52,34 +80,33 @@ func LoadEnv() (*Env, error) {
 		return nil, err
 	}
 
-	e.NixyGlobalDir = func() string {
-		d := os.Getenv("XDG_DATA_HOME")
-		if d == "" {
-			d = filepath.Join(os.Getenv("HOME"), ".local", "share")
-		}
-
-		return filepath.Join(d, "nixy")
-	}()
-
-	var ferr error
-	e.NixyExecutableBinPath, ferr = func() (string, error) {
-		exe, err := os.Executable()
-		if err != nil {
-			return "", err
-		}
-
-		// Resolve symlinks and get absolute path
-		exePath, err := filepath.EvalSymlinks(exe)
-		if err != nil {
-			return "", err
-		}
-
-		return exePath, nil
-	}()
-
-	if ferr != nil {
-		return nil, ferr
+	if e.NixyGlobalDir == "" {
+		e.NixyGlobalDir = defaultGlobalDir()
 	}
 
+	exe, err := executablePath()
+	if err != nil {
+		return nil, err
+	}
+	e.NixyExecutableBinPath = exe
+
 	return e, nil
+}
+
+func defaultGlobalDir() string {
+	dir := os.Getenv("XDG_DATA_HOME")
+	if dir == "" {
+		dir = filepath.Join(os.Getenv("HOME"), ".local", "share")
+	}
+
+	return filepath.Join(dir, "nixy")
+}
+
+func executablePath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.EvalSymlinks(exe)
 }

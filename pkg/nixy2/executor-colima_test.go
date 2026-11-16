@@ -88,7 +88,7 @@ func TestNewColimaExecutorGeneratesConfiguredYAML(t *testing.T) {
 	sshPath := filepath.Join(os.Getenv("COLIMA_HOME"), "_lima", "colima-"+c.profileName, "ssh.config")
 	t.Setenv("TEST_SSH_CONFIG", sshPath)
 
-	if err := c.EnsureColimaVM(&app.Context{Context: context.Background(), PWD: tmpDir}); err != nil {
+	if err := c.EnsureColimaVM(&app.Context{Context: context.Background(), Env: &app.Env{}, PWD: tmpDir}); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(configPath)
@@ -190,6 +190,7 @@ exit 1
 			}
 			ctx := &app.Context{
 				Context: context.Background(),
+				Env:     &app.Env{},
 				PWD:     tmpDir,
 			}
 
@@ -215,6 +216,7 @@ func TestEnsureColimaVM_WorktreeMounts(t *testing.T) {
 		name      string
 		worktrees string
 		pwd       string
+		disabled  bool
 		wantExtra []colimaConfigMount
 	}{
 		{
@@ -248,6 +250,11 @@ func TestEnsureColimaVM_WorktreeMounts(t *testing.T) {
 			worktrees: porcelain("/home/dev/a", "/home/dev/b"),
 			pwd:       "/home/dev/a",
 		},
+		{
+			name:      "mounts disabled adds no mount",
+			worktrees: porcelain("/work/repo", "/work/trees/one"),
+			disabled:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -266,7 +273,13 @@ func TestEnsureColimaVM_WorktreeMounts(t *testing.T) {
 			configPath := filepath.Join(tmpDir, "colima.yaml")
 			c := &colimaExecutor{profileName: "nixy-test", colimaConfig: configPath}
 
-			if err := c.EnsureColimaVM(&app.Context{Context: context.Background(), PWD: pwd}); err != nil {
+			ctx := &app.Context{
+				Context: context.Background(),
+				Env:     &app.Env{NixyDisableWorktreeMounts: tt.disabled},
+				PWD:     pwd,
+			}
+
+			if err := c.EnsureColimaVM(ctx); err != nil {
 				t.Fatal(err)
 			}
 

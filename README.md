@@ -16,14 +16,9 @@ nixy init
 nixy shell
 ```
 
-`nixy init` creates the project config and local workspace scaffold:
+`nixy init` creates the project config:
 
-- `nixy.yml` - shared project config
-- `nixy.local.yml` - machine-local config for personal tools, mounts, and env vars
-- `.gitignore` entries for `.nixy/` and `nixy.local.yml`
-
-Before writing, `nixy init` shows the project files and runtime directories it will create or update, then asks for confirmation.
-`nixy.local.yml` is loaded by `nixy shell` only. It may define its own `nixpkgs` entries, but `nixy.yml` takes precedence when keys overlap. `nixy build` uses the shared `nixy.yml` project config.
+- `nixy.yml` - shared project config, pinning `nixpkgs.default` to the current nixos-unstable commit
 
 ## Auto Jump into nixy shell
 
@@ -252,19 +247,19 @@ nixy shell
 #### Local (Pure Environment)
 Uses your system's Nix installation but creates a pure environment (ignores host environment variables):
 ```bash
-NIXY_EXECUTOR=local-ignore-env nixy shell
+NIXY_MODE=local-ignore-env nixy shell
 ```
 
 #### Docker
 Perfect for CI/CD pipelines:
 ```bash
-NIXY_EXECUTOR=docker nixy shell
+NIXY_MODE=docker nixy shell
 ```
 
 #### Bubblewrap (Sandboxed)
 Strong isolation with automatic static nix binary download - **no systemwide Nix installation required**:
 ```bash
-NIXY_EXECUTOR=bubblewrap nixy shell
+NIXY_MODE=bubblewrap nixy shell
 ```
 
 > [!NOTE]
@@ -274,28 +269,6 @@ NIXY_EXECUTOR=bubblewrap nixy shell
 > ```sh
     echo "1" > /proc/sys/kernel/sysrq 
   ```
-
-### 👤 Profile Management
-
-> [!NOTE]
-> Profiles provide runtime isolation. Different dev shells within the same profile share runtime filesystems like nix-store and fake-home.
-> Profile metadata lives in `profile.yaml` and stores values such as the default nixpkgs pin. Profiles do not inject packages, mounts, or env vars into project shells.
-
-Keep separate development profiles:
-```bash
-# Create profiles
-nixy profile create work
-nixy profile create personal
-
-# Use a profile
-NIXY_PROFILE=work nixy shell
-
-# List profiles
-nixy profile list
-
-# Edit profile config
-nixy profile edit work
-```
 
 ## Advanced Features
 
@@ -384,6 +357,10 @@ This is automatic and needs no `mounts` entry. Worktrees created later appear as
 they land inside an already mounted dir. Colima bakes mounts into the VM, so a worktree
 outside the mounted dirs needs a profile restart (nixy warns once).
 
+Set `NIXY_DISABLE_WORKTREE_MOUNTS=true` to opt out — for example when the sibling worktrees
+hold things a sandboxed process shouldn't see. Only the worktree mount is dropped; explicit
+`mounts:` entries are unaffected.
+
 ## Commands
 
 ### Core Commands
@@ -391,11 +368,7 @@ outside the mounted dirs needs a profile restart (nixy warns once).
 - `nixy shell` - Enter development shell
 - `nixy build [target]` - Build defined targets
 - `nixy shell:hook <shell>` - Output shell hook script for auto-activation (supports: bash, zsh, fish)
-
-### Profile Commands
-- `nixy profile create <name>` - Create a profile namespace
-- `nixy profile edit [name]` - Edit profile metadata
-- `nixy profile list` - List all profiles
+- `nixy env` - List the environment variables nixy reads (add `--json` for tooling)
 
 ## Examples
 
@@ -529,13 +502,18 @@ builds:
 
 ## Environment Variables
 
-- `NIXY_EXECUTOR` - Execution backend (local, local-ignore-env, docker, bubblewrap)
-- `NIXY_PROFILE` - Profile namespace to use
+Run `nixy env` for the full list of variables nixy reads, with defaults and current values.
+`nixy env --json` prints the same list for tooling.
+
+Commonly used:
+
+- `NIXY_MODE` - Execution backend (local, local-ignore-env, docker, bubblewrap, colima)
+- `NIXY_DISABLE_WORKTREE_MOUNTS` - Set to `true` to keep sibling git worktrees out of non-local shells
 
 ## Troubleshooting
 
 ### "No Nix installation found"
-- Install Nix, or use `NIXY_EXECUTOR=bubblewrap` for automatic Nix download
+- Install Nix, or use `NIXY_MODE=bubblewrap` for automatic Nix download
 
 ### "Package not found"
 - Check package name at [search.nixos.org](https://search.nixos.org)
