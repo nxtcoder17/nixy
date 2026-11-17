@@ -1,8 +1,11 @@
 nixpkgs:
   default: 050e09e091117c3d7328c7b2b7b577492c43c134
+
 packages:
   - go
   - fish
+
+  # runfile from nxtcoder17/runfile
   - name: run
     sources:
       linux/amd64:
@@ -10,6 +13,7 @@ packages:
       linux/arm64:
         url: "https://github.com/nxtcoder17/Runfile/releases/download/v1.6.1-master/run-linux-arm64"
         sha256: sha256-7TDIgXoavQ2SI0fzxg7vGeU+qGhKHJ/fzu6wO4WxwBc=
+
   - name: opencode
     sources:
       linux/amd64:
@@ -17,10 +21,12 @@ packages:
       linux/arm64:
         url: https://opencode.ai/update/api/latest/cli/opencode/opencode-linux-arm64.tar.gz
         sha256: sha256-Mgf7XN7ESNR5JCwPGhT09738rTp5IJteuPkANyXpNxE=
+
 mounts:
   - source: $HOME/.claude/skills
     dest: $HOME/.agents/skills
     readonly: true
+
 builds:
   go-app-docker:
     dir: ./example/go-app-docker
@@ -28,6 +34,7 @@ builds:
       go build -o ./bin/go-app ./main.go
     paths:
       - ./bin/go-app
+
 onShellEnter: |
   export PATH="$PWD/bin:$PATH"
   # source ~/.profile

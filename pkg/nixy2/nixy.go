@@ -4,6 +4,7 @@ import (
 	"github.com/nxtcoder17/go.errors"
 	"github.com/nxtcoder17/nixy/internal/app"
 
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	yamlAST "github.com/nxtcoder17/nixy/pkg/yaml-ast"
@@ -116,6 +117,21 @@ func readNixyFile(file string) ([]byte, *yamlAST.Parser, error) {
 		return nil, nil, err
 	}
 	return b, parser, nil
+}
+
+// formatNixyFile only rewrites the file when its top-level spacing is stale.
+func formatNixyFile(file string) error {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+
+	formatted := yamlAST.Format(b)
+	if bytes.Equal(formatted, b) {
+		return nil
+	}
+
+	return os.WriteFile(file, formatted, 0o644)
 }
 
 func decodeNixyYAML(parser *yamlAST.Parser) (*NixyYAML, error) {
@@ -236,20 +252,19 @@ func (n *NixyYAML) syncToDisk(file string, content any) error {
 		return fmt.Errorf("required param `file` not provided")
 	}
 
-	output, err := os.OpenFile(file,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o644,
-	)
-	if err != nil {
+	var b bytes.Buffer
+	encoder := yaml.NewEncoder(&b)
+	encoder.SetIndent(2)
+
+	if err := encoder.Encode(content); err != nil {
 		return err
 	}
-	defer output.Close()
 
-	encoder := yaml.NewEncoder(output)
-	encoder.SetIndent(2)
-	defer encoder.Close()
+	if err := encoder.Close(); err != nil {
+		return err
+	}
 
-	return encoder.Encode(content)
+	return os.WriteFile(file, yamlAST.Format(b.Bytes()), 0o644)
 }
 
 func mergeNixyYAMLs(yamls ...*NixyYAML) *NixyYAML {
@@ -305,6 +320,9 @@ func mergeNixyYAMLs(yamls ...*NixyYAML) *NixyYAML {
 }
 
 func LoadFromFile(appCtx *app.Context, f string) (*Nixy, error) {
+	// best-effort: heal spacing in configs written before Format existed
+	_ = formatNixyFile(f)
+
 	n, err := func() (*Nixy, error) {
 		projectNixy, err := parseAndSyncNixyFile(appCtx, f)
 		if err != nil {
